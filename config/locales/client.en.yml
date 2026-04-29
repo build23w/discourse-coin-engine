@@ -6,6 +6,8 @@ en:
           coin_engine: "Coin Engine"
     coin_engine:
       title: "Coin Engine"
+      payments:
+        title: "Payments"
   js:
     coin_engine:
       title: "Coin Engine"

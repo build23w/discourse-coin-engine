@@ -1,17 +1,4 @@
-<div class="coin-engine-admin-tab" style="margin-top: 20px;">
-  <div style="background:#fff;border:1px solid rgba(15,22,36,.1);border-radius:12px;padding:18px 22px;margin-bottom:14px;box-shadow:0 2px 12px rgba(15,22,36,.05);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-    <h2 style="margin:0 0 6px;font-size:18px;font-weight:800;color:#1a2332;">Manual Payments</h2>
-    <p style="margin:0;color:#5a6573;font-size:13.5px;line-height:1.5;">
-      Issue manual coin payments, search recipients, and add Solana transaction signatures after on-chain mint. Every payment credits the user, appends to the public ledger, sends a receipt email, and creates a permanent receipt PM.
-    </p>
-    <p style="margin:10px 0 0;font-size:12.5px;color:#8b95a3;">
-      Tip: open <a href="/admin/plugins/coin-engine/embed" target="_blank" style="color:#ff6b35;">in a full window &rarr;</a> for more screen real estate.
-    </p>
-  </div>
-
-  <iframe src="/admin/plugins/coin-engine/embed"
-          title="Coin Engine Manual Payments"
-          loading="eager"
-          style="width:100%; height:1200px; border:1px solid rgba(15,22,36,.1); border-radius:12px; background:#fff; display:block;">
-  </iframe>
-</div>
+{{!-- Superseded by the route-map approach in v0.4.1. The Payments tab now appears
+     at the top of the Coin Engine admin page (next to Settings) via
+     admin/assets/javascripts/discourse/admin-coin-engine-route-map.js +
+     templates/admin/plugins/show/payments.hbs. This connector renders nothing. --}}
