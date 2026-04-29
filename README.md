@@ -82,10 +82,14 @@ The theme component **hrr-ux-pack** (separately deployed at `theme id 31` on hom
 
 ## Compatibility
 
-**Discourse 3.2 - 2026.5+**. v0.2.1 (2026-04-29) replaced the `User::USERNAME_ROUTE_FORMAT` constant in route constraints with an inline regex; that constant was removed in Discourse 2026.x and would crash plugin boot with `NameError: uninitialized constant User::USERNAME_ROUTE_FORMAT`. The fix is forward-compatible with both old and new Discourse versions.
+**Discourse 3.2 - 2026.5+**. The plugin keeps a small API surface so 2026.x rebuilds don't break.
 
-If you hit a `NameError` or `uninitialized constant` failure during `bundle exec rake db:migrate` for any other Rails 8 / Discourse 2026.x deprecation, please open an issue with the stack trace — the plugin's API surface is small and keeping it 2026-compatible is intentional.
+Compat fix history:
+- **v0.2.2** (2026-04-29) -- removed `register_asset 'stylesheets/coin-engine-admin.scss', :admin` from `plugin.rb`. The referenced file didn't exist in the repo, so `assets:precompile` hit `Sass::CompileError: Can't find stylesheet to import.` during container rebuild. There's no admin UI to style yet; re-add the register and ship the matching SCSS file when an admin panel lands.
+- **v0.2.1** (2026-04-29) -- replaced `User::USERNAME_ROUTE_FORMAT` with inline regex `%r{[\w.\-]+?}` in route constraints. That constant was removed in Discourse 2026.x and crashed plugin boot during `db:migrate` with `NameError: uninitialized constant User::USERNAME_ROUTE_FORMAT`.
+
+If you hit a `NameError` / `uninitialized constant` / `Can't find stylesheet` failure on rebuild, please open an issue with the stack trace.
 
 ## License
 
-MIT, in keeping with most Discourse plugin conventions.
+MIT.
