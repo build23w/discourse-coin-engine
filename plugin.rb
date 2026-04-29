@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.3.0
+# version: 0.3.1
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -32,7 +32,15 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_payments_controller.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
 
-  add_admin_route 'coin_engine.title', 'coin-engine'
+  # NOTE: add_admin_route was removed in v0.3.1 because it registers an Ember
+  # client-side route that requires a matching Ember module to handle navigation.
+  # We ship server-rendered HTML at /admin/plugins/coin-engine instead -- without
+  # an Ember module the sidebar link errors with "Unable to configure link". To
+  # use the admin payments UI, bookmark the URL directly:
+  #   https://your-forum/admin/plugins/coin-engine
+  # If we ever ship an Ember admin module, re-add the line below with
+  # `use_new_show_route: true` so it routes through Discourse's modern plugin-show.
+  #   add_admin_route 'coin_engine.title', 'coin-engine', use_new_show_route: true
 
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_weekly_digest.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_personal_recap.rb', __FILE__)
