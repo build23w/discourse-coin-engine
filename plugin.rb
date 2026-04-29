@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.3.1
+# version: 0.4.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -32,15 +32,12 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_payments_controller.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
 
-  # NOTE: add_admin_route was removed in v0.3.1 because it registers an Ember
-  # client-side route that requires a matching Ember module to handle navigation.
-  # We ship server-rendered HTML at /admin/plugins/coin-engine instead -- without
-  # an Ember module the sidebar link errors with "Unable to configure link". To
-  # use the admin payments UI, bookmark the URL directly:
-  #   https://your-forum/admin/plugins/coin-engine
-  # If we ever ship an Ember admin module, re-add the line below with
-  # `use_new_show_route: true` so it routes through Discourse's modern plugin-show.
-  #   add_admin_route 'coin_engine.title', 'coin-engine', use_new_show_route: true
+  # v0.4.0: registers the sidebar link AND the modern plugin-show route. We ship
+  # a connector at admin/assets/javascripts/discourse/connectors/admin-plugin-config-page-coin-engine/
+  # which Ember renders inside the show page. The connector iframes the
+  # /admin/plugins/coin-engine/embed URL (same admin payments UI, layoutless)
+  # so the existing server-rendered HTML/JS stays as the source of truth.
+  add_admin_route 'coin_engine.title', 'coin-engine', use_new_show_route: true
 
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_weekly_digest.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_personal_recap.rb', __FILE__)
@@ -69,12 +66,18 @@ after_initialize do
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
 
     # ===== Admin UI for manual payments =====
-    get  '/admin/plugins/coin-engine'                                => 'discourse_coin_engine/admin_payments#index'
+    # /admin/plugins/coin-engine is the Ember-rendered show page (sidebar link target).
+    # /admin/plugins/coin-engine/embed renders the same UI without admin layout
+    # so the connector can iframe it inside the show page.
+    get  '/admin/plugins/coin-engine/embed'                          => 'discourse_coin_engine/admin_payments#embed'
     get  '/admin/plugins/coin-engine/payments.json'                  => 'discourse_coin_engine/admin_payments#list'
     get  '/admin/plugins/coin-engine/users/search.json'              => 'discourse_coin_engine/admin_payments#search_users'
     get  '/admin/plugins/coin-engine/users/:id/payments.json'        => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
     post '/admin/plugins/coin-engine/payments.json'                  => 'discourse_coin_engine/admin_payments#create'
     put  '/admin/plugins/coin-engine/payments/:id/tx.json'           => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
+
+    # User-facing receipts (used by hrr-ux-pack to inject a "Recent receipts" card on profile pages)
+    get  '/coin-engine/user/:username/payments.json'                 => 'discourse_coin_engine/user_recap#payments', constraints: { username: username_re }
   end
 
   # ===== Serializer enrichment =====

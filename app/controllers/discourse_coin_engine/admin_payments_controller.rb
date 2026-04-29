@@ -4,8 +4,8 @@ module DiscourseCoinEngine
   class AdminPaymentsController < ::Admin::AdminController
     requires_plugin DiscourseCoinEngine::PLUGIN_NAME
 
-    skip_before_action :preload_json, only: [:index]
-    skip_before_action :check_xhr,     only: [:index]
+    skip_before_action :preload_json, only: [:index, :embed]
+    skip_before_action :check_xhr,     only: [:index, :embed]
 
     # GET /admin/plugins/coin-engine -- server-rendered HTML admin page.
     # Inline JS hits the JSON endpoints below.
@@ -14,6 +14,14 @@ module DiscourseCoinEngine
         format.html { render layout: 'admin', template: 'discourse_coin_engine/admin_payments/index' }
         format.json { list_payments }
       end
+    end
+
+    # GET /admin/plugins/coin-engine/embed -- same UI but rendered without the
+    # admin chrome so it can be iframed inside the Ember plugin-show page.
+    def embed
+      response.headers.delete('X-Frame-Options')
+      response.headers['Content-Security-Policy'] = "frame-ancestors 'self'"
+      render layout: false, template: 'discourse_coin_engine/admin_payments/index'
     end
 
     # GET /admin/plugins/coin-engine/payments.json
@@ -242,6 +250,8 @@ module DiscourseCoinEngine
       coin    = SiteSetting.coin_engine_coin_name
       ledger  = "/t/#{SiteSetting.coin_engine_ledger_topic_id}"
       title   = "Receipt: #{payment.amount} #{coin} credited to your account"
+      issuer  = ::User.find_by(id: payment.issued_by_user_id)&.username || 'system'
+      tx_line = payment.tx_signature.presence || '_pending mint -- transaction signature will be added once on-chain._'
       raw = <<~MD
         Hi @#{user.username},
 
@@ -252,9 +262,9 @@ module DiscourseCoinEngine
         | Receipt # | ##{payment.id} |
         | Amount | +#{payment.amount} #{coin} |
         | Reason | #{reason} |
-        | Issued by | @#{::User.find_by(id: payment.issued_by_user_id)&.username || 'system'} |
+        | Issued by | @#{issuer} |
         | Date | #{payment.created_at.strftime('%Y-%m-%d %H:%M UTC')} |
-        | On-chain tx | #{payment.tx_signature.presence || '_pending mint -- a transaction signature will be added here once on-chain mint occurs._'} |
+        | On-chain tx | #{tx_line} |
 
         Your full balance and rank are visible on the [leaderboard](/leaderboard/1). The full audit trail is on the [public payment ledger](#{ledger}).
 
