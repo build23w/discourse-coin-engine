@@ -1,0 +1,49 @@
+en:
+  site_settings:
+    coin_engine_enabled: "Master switch for the coin engine plugin. When false, all endpoints 404 and all jobs no-op."
+    coin_engine_coin_name: "Display name for the community coin shown in widgets and emails. Default '$RENO'."
+    coin_engine_coin_symbol: "Single-character symbol for the coin (e.g. '$', '⊙'). Default '$'."
+    coin_engine_brand_color: "Hex color used as the brand accent in email templates. Default LF orange."
+    coin_engine_welcome_topic_id: "Topic ID for the coin welcome guide. Linked from widgets and emails."
+    coin_engine_ledger_topic_id: "Topic ID for the public payment ledger. Linked from widgets and emails."
+    coin_engine_tier_thresholds: "Pipe-separated coin thresholds for each tier. Must match tier_names length."
+    coin_engine_tier_names: "Pipe-separated tier names. Must match tier_thresholds length."
+    coin_engine_solana_field_id: "Discourse user_field ID for the Solana wallet address."
+    coin_engine_max_earn_per_hour: "Anti-abuse cap on coins earnable per user per hour. 0 disables the cap."
+    coin_engine_emails_enabled: "Master switch for ALL coin engine email jobs. Must be true for any individual digest to send."
+    coin_engine_weekly_digest_enabled: "Send weekly leaderboard digest emails Mondays."
+    coin_engine_weekly_digest_top_n: "How many top users to include in the leaderboard digest."
+    coin_engine_personal_recap_enabled: "Send each user a personal weekly recap of their earnings, rank delta, and new badges."
+    coin_engine_streak_warning_enabled: "Email users whose visit streak is at risk of breaking today."
+    coin_engine_streak_warning_min_days: "Minimum streak length before sending a warning. Avoids nagging brand-new users."
+    coin_engine_dormant_reengage_enabled: "Email dormant users a 'here's what you missed' digest weekly."
+    coin_engine_dormant_days_threshold: "User is considered dormant after N days without a visit."
+    coin_engine_tier_up_email_enabled: "Send a real-time email when a user crosses a tier threshold."
+    coin_engine_webhook_url: "Optional outbound webhook URL. Coin engine events POST here when this is set."
+    coin_engine_webhook_events: "Comma-separated event types to post to the webhook. Options: tier_up, airdrop, milestone, weekly_digest_sent."
+
+  discourse_coin_engine:
+    weekly_digest:
+      subject: "Top earners on %{site_name} this week"
+      title: "This week on %{site_name}"
+      intro: "Here's the leaderboard for the past 7 days. Top earners, hot topics, and where you stand."
+      your_rank_unchanged: "Your rank: #%{rank}"
+      your_rank_up: "Your rank: #%{rank} (up %{delta} this week)"
+      your_rank_down: "Your rank: #%{rank} (down %{delta} this week)"
+    personal_recap:
+      subject: "Your weekly %{coin} recap"
+      earned_this_week: "You earned %{amount} %{coin} this week"
+      new_badges: "New badges unlocked"
+      streak: "Current streak: %{days} days"
+    streak_warning:
+      subject: "Don't break your %{days}-day streak"
+      body: "You haven't logged in today. Visit %{site_name} now to keep your %{days}-day visit streak alive."
+    dormant_reengage:
+      subject: "Here's what you missed on %{site_name}"
+      intro: "It's been a while. Here are the most active conversations from the past week and the quests you can finish in 5 minutes."
+    tier_up:
+      subject: "You reached %{tier} tier on %{site_name}"
+      body: "Congrats. You've earned enough %{coin} to reach %{tier} tier."
+    airdrop:
+      subject: "%{amount} %{coin} airdropped to your account"
+      body: "An airdrop of %{amount} %{coin} has been credited to your %{site_name} account. Reason: %{reason}"

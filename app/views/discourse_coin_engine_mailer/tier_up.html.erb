@@ -1,0 +1,16 @@
+<table style="max-width:520px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#1a2332;">
+  <tr>
+    <td style="padding:24px 0;text-align:center;">
+      <div style="font-size:54px;line-height:1;">&#127942;</div>
+      <h1 style="margin:14px 0 6px;font-size:24px;font-weight:800;">You reached <%= @tier_name %> tier</h1>
+      <p style="margin:0;color:#5a6573;font-size:14px;line-height:1.5;">
+        <%= t('discourse_coin_engine.tier_up.body', tier: @tier_name, coin: @coin_name) %>
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:18px 0;text-align:center;">
+      <a href="<%= @site_url %>/my/preferences/account" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:8px;font-size:14px;">Pick your title &rarr;</a>
+    </td>
+  </tr>
+</table>

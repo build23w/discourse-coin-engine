@@ -1,0 +1,21 @@
+<table style="max-width:520px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#1a2332;">
+  <tr>
+    <td style="padding:24px 0;text-align:center;">
+      <div style="font-size:48px;line-height:1;">&#128293;</div>
+      <h1 style="margin:14px 0 6px;font-size:22px;font-weight:800;">Your <%= @streak_days %>-day streak is at risk</h1>
+      <p style="margin:0;color:#5a6573;font-size:14px;line-height:1.5;">
+        <%= t('discourse_coin_engine.streak_warning.body', days: @streak_days, site_name: @site_name) %>
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 0 8px;text-align:center;">
+      <a href="<%= @site_url %>/" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:8px;font-size:15px;">Visit now &rarr;</a>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 0 8px;font-size:12px;color:#8b95a3;text-align:center;">
+      <a href="<%= @site_url %>/my/preferences/emails" style="color:#8b95a3;">Email settings</a>
+    </td>
+  </tr>
+</table>

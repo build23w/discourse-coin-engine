@@ -1,0 +1,47 @@
+<table style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#1a2332;">
+  <tr>
+    <td style="padding:24px 0;border-bottom:3px solid <%= @brand_color %>;">
+      <h1 style="margin:0;font-size:22px;font-weight:800;"><%= t('discourse_coin_engine.weekly_digest.title', site_name: @site_name) %></h1>
+      <p style="margin:6px 0 0;color:#5a6573;font-size:13px;"><%= t('discourse_coin_engine.weekly_digest.intro') %></p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:18px 0;">
+      <h2 style="margin:0 0 12px;font-size:15px;font-weight:700;color:<%= @brand_color %>;letter-spacing:.4px;text-transform:uppercase;">Top this week</h2>
+      <table style="width:100%;border-collapse:collapse;">
+        <% @top.each do |row| %>
+          <tr>
+            <td style="padding:8px 6px;border-bottom:1px solid #eef1f6;font-size:14px;width:40px;color:#8b95a3;font-weight:700;">#<%= row[:rank] %></td>
+            <td style="padding:8px 6px;border-bottom:1px solid #eef1f6;font-size:14px;font-weight:600;"><a href="<%= @site_url %>/u/<%= row[:username] %>" style="color:#1a2332;text-decoration:none;"><%= row[:username] %></a></td>
+            <td style="padding:8px 6px;border-bottom:1px solid #eef1f6;font-size:14px;text-align:right;font-weight:700;color:<%= @brand_color %>;"><%= number_with_delimiter(row[:total]) %> <%= @coin_name %></td>
+          </tr>
+        <% end %>
+      </table>
+    </td>
+  </tr>
+  <% if @my_rank %>
+    <tr>
+      <td style="padding:14px 16px;background:#fff3eb;border-radius:10px;font-size:14px;color:#1a2332;">
+        <% if @rank_delta && @rank_delta > 0 %>
+          <%= t('discourse_coin_engine.weekly_digest.your_rank_up', rank: @my_rank, delta: @rank_delta) %>
+        <% elsif @rank_delta && @rank_delta < 0 %>
+          <%= t('discourse_coin_engine.weekly_digest.your_rank_down', rank: @my_rank, delta: @rank_delta.abs) %>
+        <% else %>
+          <%= t('discourse_coin_engine.weekly_digest.your_rank_unchanged', rank: @my_rank) %>
+        <% end %>
+      </td>
+    </tr>
+  <% end %>
+  <tr>
+    <td style="padding:24px 0 0;text-align:center;">
+      <a href="<%= @site_url %>/leaderboard/1" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:8px;font-size:14px;">View full leaderboard &rarr;</a>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 0 8px;font-size:12px;color:#8b95a3;text-align:center;">
+      <a href="<%= @welcome_url %>" style="color:#8b95a3;">How <%= @coin_name %> works</a> &middot;
+      <a href="<%= @ledger_url %>" style="color:#8b95a3;">Payment ledger</a> &middot;
+      <a href="<%= @site_url %>/my/preferences/emails" style="color:#8b95a3;">Email settings</a>
+    </td>
+  </tr>
+</table>

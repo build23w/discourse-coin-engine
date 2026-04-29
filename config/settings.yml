@@ -1,0 +1,88 @@
+plugins:
+  coin_engine_enabled:
+    default: true
+    client: true
+
+  # ===== Branding =====
+  coin_engine_coin_name:
+    default: "$RENO"
+    client: true
+  coin_engine_coin_symbol:
+    default: "$"
+    client: true
+  coin_engine_brand_color:
+    default: "#ff6b35"
+    client: true
+
+  # ===== Topic IDs =====
+  coin_engine_welcome_topic_id:
+    default: 47008
+    client: true
+    min: 0
+  coin_engine_ledger_topic_id:
+    default: 47016
+    client: true
+    min: 0
+
+  # ===== Tier ladder =====
+  # Pipe-separated thresholds and matching names. Both lists must have the same length.
+  coin_engine_tier_thresholds:
+    default: "0|100|1000|5000|25000|50000"
+    client: true
+  coin_engine_tier_names:
+    default: "Beginner|Bronze|Silver|Gold|Platinum|Diamond"
+    client: true
+
+  # ===== Wallet field =====
+  coin_engine_solana_field_id:
+    default: 1
+    client: true
+    min: 0
+
+  # ===== Anti-abuse =====
+  coin_engine_max_earn_per_hour:
+    default: 500
+    min: 0
+    max: 100000
+
+  # ===== Email engagement (master switch) =====
+  coin_engine_emails_enabled:
+    default: false
+
+  # ===== Weekly leaderboard digest =====
+  coin_engine_weekly_digest_enabled:
+    default: false
+  coin_engine_weekly_digest_top_n:
+    default: 10
+    min: 3
+    max: 25
+
+  # ===== Personal weekly recap =====
+  coin_engine_personal_recap_enabled:
+    default: false
+
+  # ===== Streak warning =====
+  coin_engine_streak_warning_enabled:
+    default: false
+  coin_engine_streak_warning_min_days:
+    default: 3
+    min: 1
+    max: 30
+
+  # ===== Dormant re-engagement =====
+  coin_engine_dormant_reengage_enabled:
+    default: false
+  coin_engine_dormant_days_threshold:
+    default: 7
+    min: 3
+    max: 60
+
+  # ===== Tier-up real-time email =====
+  coin_engine_tier_up_email_enabled:
+    default: false
+
+  # ===== Webhook (outbound) =====
+  coin_engine_webhook_url:
+    default: ""
+  coin_engine_webhook_events:
+    default: "tier_up,airdrop,milestone"
