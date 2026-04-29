@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.4.2
+# version: 0.4.4
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -69,24 +69,19 @@ after_initialize do
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
 
     # ===== Admin UI for manual payments =====
-    # Discourse 2026 routes the plugin admin page at /admin/plugins/{manifest_name},
-    # i.e. /admin/plugins/discourse-coin-engine -- so all our admin routes mount
-    # under that prefix. The `coin-engine` aliases below are retained for legacy
-    # URL compatibility (anything that was bookmarked before v0.4.2 still works).
-    get  '/admin/plugins/discourse-coin-engine/embed'                => 'discourse_coin_engine/admin_payments#embed'
-    get  '/admin/plugins/discourse-coin-engine/payments.json'        => 'discourse_coin_engine/admin_payments#list'
-    get  '/admin/plugins/discourse-coin-engine/users/search.json'    => 'discourse_coin_engine/admin_payments#search_users'
-    get  '/admin/plugins/discourse-coin-engine/users/:id/payments.json' => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
-    post '/admin/plugins/discourse-coin-engine/payments.json'        => 'discourse_coin_engine/admin_payments#create'
-    put  '/admin/plugins/discourse-coin-engine/payments/:id/tx.json' => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
-
-    # Legacy aliases (pre-v0.4.2 URL pattern). Keep alive for old bookmarks.
-    get  '/admin/plugins/coin-engine/embed'                          => 'discourse_coin_engine/admin_payments#embed'
-    get  '/admin/plugins/coin-engine/payments.json'                  => 'discourse_coin_engine/admin_payments#list'
-    get  '/admin/plugins/coin-engine/users/search.json'              => 'discourse_coin_engine/admin_payments#search_users'
-    get  '/admin/plugins/coin-engine/users/:id/payments.json'        => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
-    post '/admin/plugins/coin-engine/payments.json'                  => 'discourse_coin_engine/admin_payments#create'
-    put  '/admin/plugins/coin-engine/payments/:id/tx.json'           => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
+    # MUST live OUTSIDE /admin/plugins/* because Discourse's Ember plugin-show
+    # route owns that entire namespace under `use_new_show_route: true`. Routes
+    # registered via routes.append run AFTER Ember's catch-all -- so anything
+    # we put under /admin/plugins/discourse-coin-engine/* gets swallowed by
+    # Ember and 404s. Our own /coin-engine/admin/* namespace is conflict-free.
+    # Mods bookmark `/coin-engine/admin` -- that's the full payments UI.
+    get  '/coin-engine/admin'                                        => 'discourse_coin_engine/admin_payments#index'
+    get  '/coin-engine/admin/embed'                                  => 'discourse_coin_engine/admin_payments#embed'
+    get  '/coin-engine/admin/payments.json'                          => 'discourse_coin_engine/admin_payments#list'
+    get  '/coin-engine/admin/users/search.json'                      => 'discourse_coin_engine/admin_payments#search_users'
+    get  '/coin-engine/admin/users/:id/payments.json'                => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
+    post '/coin-engine/admin/payments.json'                          => 'discourse_coin_engine/admin_payments#create'
+    put  '/coin-engine/admin/payments/:id/tx.json'                   => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
 
     # User-facing receipts (used by hrr-ux-pack to inject a "Recent receipts" card on profile pages)
     get  '/coin-engine/user/:username/payments.json'                 => 'discourse_coin_engine/user_recap#payments', constraints: { username: username_re }

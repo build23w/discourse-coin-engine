@@ -1,6 +1,9 @@
 en:
   site_settings:
-    coin_engine_enabled: "Master switch for the coin engine plugin. When false, all endpoints 404 and all jobs no-op."
+    coin_engine_enabled: |
+      Master switch for the coin engine plugin. When false, all endpoints 404 and all jobs no-op.
+
+      <strong>📋 Manual Payments admin page</strong>: <a href="/coin-engine/admin">/coin-engine/admin</a> — full UI for issuing manual payments, viewing recent payments, and adding Solana transaction signatures after on-chain mint. Admin-only, gated by the same auth as this Settings page.
     coin_engine_coin_name: "Display name for the community coin shown in widgets and emails. Default '$RENO'."
     coin_engine_coin_symbol: "Single-character symbol for the coin (e.g. '$', '⊙'). Default '$'."
     coin_engine_brand_color: "Hex color used as the brand accent in email templates. Default LF orange."
