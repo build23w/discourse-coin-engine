@@ -4,6 +4,14 @@ en:
       site_settings:
         categories:
           coin_engine: "Coin Engine"
+    # Tab labels are resolved by Discourse using the manifest plugin name
+    # transformed to snake_case: discourse-coin-engine -> discourse_coin_engine.
+    # We keep the old `coin_engine.*` entries for backward compatibility and
+    # any older Discourse versions that look there.
+    discourse_coin_engine:
+      title: "Coin Engine"
+      payments:
+        title: "Payments"
     coin_engine:
       title: "Coin Engine"
       payments:

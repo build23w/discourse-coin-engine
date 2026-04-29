@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.4.1
+# version: 0.4.2
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -37,7 +37,10 @@ after_initialize do
   # which Ember renders inside the show page. The connector iframes the
   # /admin/plugins/coin-engine/embed URL (same admin payments UI, layoutless)
   # so the existing server-rendered HTML/JS stays as the source of truth.
-  add_admin_route 'coin_engine.title', 'coin-engine', use_new_show_route: true
+  # Modern Discourse generates the plugin admin URL from the manifest name,
+  # not from the location slug. So the page lives at /admin/plugins/discourse-coin-engine
+  # regardless of what we pass here -- our routes below use that prefix to match.
+  add_admin_route 'coin_engine.title', 'discourse-coin-engine', use_new_show_route: true
 
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_weekly_digest.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_personal_recap.rb', __FILE__)
@@ -66,9 +69,18 @@ after_initialize do
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
 
     # ===== Admin UI for manual payments =====
-    # /admin/plugins/coin-engine is the Ember-rendered show page (sidebar link target).
-    # /admin/plugins/coin-engine/embed renders the same UI without admin layout
-    # so the connector can iframe it inside the show page.
+    # Discourse 2026 routes the plugin admin page at /admin/plugins/{manifest_name},
+    # i.e. /admin/plugins/discourse-coin-engine -- so all our admin routes mount
+    # under that prefix. The `coin-engine` aliases below are retained for legacy
+    # URL compatibility (anything that was bookmarked before v0.4.2 still works).
+    get  '/admin/plugins/discourse-coin-engine/embed'                => 'discourse_coin_engine/admin_payments#embed'
+    get  '/admin/plugins/discourse-coin-engine/payments.json'        => 'discourse_coin_engine/admin_payments#list'
+    get  '/admin/plugins/discourse-coin-engine/users/search.json'    => 'discourse_coin_engine/admin_payments#search_users'
+    get  '/admin/plugins/discourse-coin-engine/users/:id/payments.json' => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
+    post '/admin/plugins/discourse-coin-engine/payments.json'        => 'discourse_coin_engine/admin_payments#create'
+    put  '/admin/plugins/discourse-coin-engine/payments/:id/tx.json' => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
+
+    # Legacy aliases (pre-v0.4.2 URL pattern). Keep alive for old bookmarks.
     get  '/admin/plugins/coin-engine/embed'                          => 'discourse_coin_engine/admin_payments#embed'
     get  '/admin/plugins/coin-engine/payments.json'                  => 'discourse_coin_engine/admin_payments#list'
     get  '/admin/plugins/coin-engine/users/search.json'              => 'discourse_coin_engine/admin_payments#search_users'
