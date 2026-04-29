@@ -47,3 +47,7 @@ en:
     airdrop:
       subject: "%{amount} %{coin} airdropped to your account"
       body: "An airdrop of %{amount} %{coin} has been credited to your %{site_name} account. Reason: %{reason}"
+    manual_payment:
+      subject: "+%{amount} %{coin} -- receipt #%{payment_id}"
+  coin_engine:
+    title: "Coin Engine"

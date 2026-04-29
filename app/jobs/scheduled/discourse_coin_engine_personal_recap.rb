@@ -20,6 +20,7 @@ module Jobs
           .find_each(batch_size: 500) do |user|
         begin
           next unless user.email.present?
+          next unless ::DiscourseCoinEngine::EmailThrottle.may_send?(user.id)
 
           week_score = ::GamificationScore.where(user_id: user.id, date: one_week_ago.to_date..Date.today).sum(:score) rescue 0
           next if week_score < 10  # don't email users who barely participated
@@ -37,6 +38,7 @@ module Jobs
             recent_badges: recent_badges,
             streak_days: streak
           ).deliver_later
+          ::DiscourseCoinEngine::EmailThrottle.mark_sent!(user.id)
         rescue StandardError => e
           Rails.logger.warn "[coin-engine] personal recap failed for #{user.username}: #{e.message}"
         end

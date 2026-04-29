@@ -81,6 +81,10 @@ plugins:
   coin_engine_tier_up_email_enabled:
     default: false
 
+  # ===== Daily top picks (engagement) =====
+  coin_engine_daily_top_picks_enabled:
+    default: false
+
   # ===== Webhook (outbound) =====
   coin_engine_webhook_url:
     default: ""

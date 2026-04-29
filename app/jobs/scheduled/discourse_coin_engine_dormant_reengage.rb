@@ -27,7 +27,9 @@ module Jobs
           .where('last_seen_at < ? AND last_seen_at > ?', cutoff_recent, cutoff_floor)
           .find_each(batch_size: 500) do |user|
         begin
+          next unless ::DiscourseCoinEngine::EmailThrottle.may_send?(user.id)
           DiscourseCoinEngineMailer.dormant_reengage(user: user, top_topics: top_topics).deliver_later
+          ::DiscourseCoinEngine::EmailThrottle.mark_sent!(user.id)
         rescue StandardError => e
           Rails.logger.warn "[coin-engine] dormant reengage failed for #{user.username}: #{e.message}"
         end

@@ -67,6 +67,34 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
     mail to: user.email, subject: I18n.t('discourse_coin_engine.airdrop.subject', amount: amount, coin: @coin_name)
   end
 
+  def manual_payment_receipt(user:, amount:, reason:, payment_id:, issued_by:)
+    @user        = user
+    @amount      = amount
+    @reason      = reason
+    @payment_id  = payment_id
+    @issued_by   = issued_by
+    @coin_name   = SiteSetting.coin_engine_coin_name
+    @site_name   = SiteSetting.title
+    @site_url    = Discourse.base_url
+    @brand_color = SiteSetting.coin_engine_brand_color
+    @ledger_url  = "#{@site_url}/t/#{SiteSetting.coin_engine_ledger_topic_id}"
+
+    mail to: user.email,
+         subject: I18n.t('discourse_coin_engine.manual_payment.subject', amount: amount, coin: @coin_name, payment_id: payment_id)
+  end
+
+  def daily_top_picks(user:, top_topics:)
+    @user        = user
+    @top_topics  = top_topics
+    @coin_name   = SiteSetting.coin_engine_coin_name
+    @site_name   = SiteSetting.title
+    @site_url    = Discourse.base_url
+    @brand_color = SiteSetting.coin_engine_brand_color
+
+    mail to: user.email,
+         subject: "Today on #{@site_name}: 5 conversations you'll want in on"
+  end
+
   def tier_up(user:, tier_name:)
     @user        = user
     @tier_name   = tier_name

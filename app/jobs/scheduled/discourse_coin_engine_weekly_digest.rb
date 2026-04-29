@@ -25,6 +25,8 @@ module Jobs
           .where('email_digests = ?', true)
           .find_each(batch_size: 500) do |user|
         next unless user.email.present?
+        next unless ::DiscourseCoinEngine::EmailThrottle.may_send?(user.id)
+
         my_rank   = this_rank_by_id[user.id]
         last_rank = last_rank_by_id[user.id]
         rank_delta = (my_rank && last_rank) ? (last_rank - my_rank) : nil
@@ -35,6 +37,7 @@ module Jobs
           my_rank: my_rank,
           rank_delta: rank_delta
         ).deliver_later
+        ::DiscourseCoinEngine::EmailThrottle.mark_sent!(user.id)
       rescue StandardError => e
         Rails.logger.warn "[coin-engine] weekly digest send failed for #{user.username}: #{e.message}"
       end

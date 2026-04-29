@@ -1,0 +1,11 @@
+en:
+  admin_js:
+    admin:
+      site_settings:
+        categories:
+          coin_engine: "Coin Engine"
+    coin_engine:
+      title: "Coin Engine"
+  js:
+    coin_engine:
+      title: "Coin Engine"

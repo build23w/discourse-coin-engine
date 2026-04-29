@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.2.3
+# version: 0.3.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -29,11 +29,16 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/user_recap_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/streak_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_airdrop_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_payments_controller.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
+
+  add_admin_route 'coin_engine.title', 'coin-engine'
 
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_weekly_digest.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_personal_recap.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_streak_warning.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_dormant_reengage.rb', __FILE__)
+  load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_daily_top_picks.rb', __FILE__)
 
   load File.expand_path('../app/mailers/discourse_coin_engine_mailer.rb', __FILE__)
 
@@ -41,6 +46,7 @@ after_initialize do
   load File.expand_path('../lib/discourse_coin_engine/streak_calculator.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/ledger_parser.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/tier_resolver.rb', __FILE__)
+  load File.expand_path('../lib/discourse_coin_engine/email_throttle.rb', __FILE__)
 
   # Username route constraint -- Discourse 2026.x removed User::USERNAME_ROUTE_FORMAT.
   # Inline regex matches the same characters Discourse usernames allow. The
@@ -53,6 +59,14 @@ after_initialize do
     get  '/coin-engine/user/:username/recap.json'        => 'discourse_coin_engine/user_recap#show', constraints: { username: username_re }
     get  '/coin-engine/user/:username/streak.json'       => 'discourse_coin_engine/streak#show',     constraints: { username: username_re }
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
+
+    # ===== Admin UI for manual payments =====
+    get  '/admin/plugins/coin-engine'                                => 'discourse_coin_engine/admin_payments#index'
+    get  '/admin/plugins/coin-engine/payments.json'                  => 'discourse_coin_engine/admin_payments#list'
+    get  '/admin/plugins/coin-engine/users/search.json'              => 'discourse_coin_engine/admin_payments#search_users'
+    get  '/admin/plugins/coin-engine/users/:id/payments.json'        => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
+    post '/admin/plugins/coin-engine/payments.json'                  => 'discourse_coin_engine/admin_payments#create'
+    put  '/admin/plugins/coin-engine/payments/:id/tx.json'           => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
   end
 
   # ===== Serializer enrichment =====
@@ -130,7 +144,6 @@ after_initialize do
     end
   end
 
-  # Topic-list-item: always expose image_url under a stable plugin field name.
   add_to_serializer(:topic_list_item, :coin_engine_image_url, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     object.image_url.presence
   end

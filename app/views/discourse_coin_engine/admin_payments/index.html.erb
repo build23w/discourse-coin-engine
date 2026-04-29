@@ -1,0 +1,321 @@
+<% content_for :title do %>Coin Engine -- Manual Payments<% end %>
+
+<style>
+  .lf-cep-wrap { max-width: 1080px; margin: 24px auto; padding: 0 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .lf-cep-wrap h1 { font-size: 24px; font-weight: 800; margin: 0 0 6px; color: #1a2332; }
+  .lf-cep-wrap p.lead { color: #5a6573; font-size: 14px; margin: 0 0 22px; }
+  .lf-cep-card { background: #fff; border: 1px solid rgba(15,22,36,.1); border-radius: 12px; padding: 20px 22px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(15,22,36,.05); }
+  .lf-cep-card h2 { font-size: 15px; font-weight: 800; color: #ff6b35; letter-spacing: .8px; text-transform: uppercase; margin: 0 0 14px; }
+  .lf-cep-row { display: grid; grid-template-columns: 180px 1fr; gap: 14px 16px; align-items: center; margin-bottom: 12px; }
+  .lf-cep-row label { font-size: 13px; font-weight: 700; color: #1a2332; }
+  .lf-cep-row input[type="text"], .lf-cep-row input[type="number"], .lf-cep-row textarea {
+    width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(15,22,36,.14); font-size: 14px; box-sizing: border-box;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .lf-cep-row input:focus, .lf-cep-row textarea:focus { outline: 0; border-color: #ff6b35; box-shadow: 0 0 0 3px rgba(255,107,53,.15); }
+  .lf-cep-user-pick { position: relative; }
+  .lf-cep-user-results {
+    position: absolute; top: 100%; left: 0; right: 0; max-height: 240px; overflow: auto;
+    background: #fff; border: 1px solid rgba(15,22,36,.14); border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(15,22,36,.14); margin-top: 4px; z-index: 10;
+  }
+  .lf-cep-user-result { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; }
+  .lf-cep-user-result:hover, .lf-cep-user-result.is-active { background: #fff3eb; }
+  .lf-cep-user-result img { width: 28px; height: 28px; border-radius: 50%; }
+  .lf-cep-user-result strong { font-size: 13.5px; color: #1a2332; }
+  .lf-cep-user-result span { font-size: 12px; color: #8b95a3; }
+  .lf-cep-selected { display: inline-flex; align-items: center; gap: 8px; background: #fff3eb; border: 1px solid rgba(255,107,53,.3); border-radius: 999px; padding: 6px 12px 6px 6px; font-weight: 700; }
+  .lf-cep-selected img { width: 24px; height: 24px; border-radius: 50%; }
+  .lf-cep-selected button { background: transparent; border: 0; color: #d9551f; font-size: 16px; cursor: pointer; padding: 0 4px; }
+  .lf-cep-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .lf-cep-btn { background: #ff6b35; color: #fff; border: 0; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: background .15s; }
+  .lf-cep-btn:hover { background: #d9551f; }
+  .lf-cep-btn[disabled] { opacity: .5; cursor: not-allowed; }
+  .lf-cep-btn--ghost { background: transparent; color: #5a6573; border: 1px solid rgba(15,22,36,.14); }
+  .lf-cep-btn--ghost:hover { background: #f7f9fc; color: #1a2332; }
+  .lf-cep-confirm { background: #fff3eb; border: 1px solid rgba(255,107,53,.3); padding: 14px 18px; border-radius: 10px; }
+  .lf-cep-confirm strong { color: #d9551f; font-weight: 800; }
+  .lf-cep-status { font-size: 13px; padding: 10px 14px; border-radius: 8px; margin-top: 14px; }
+  .lf-cep-status--ok  { background: #e8f8eb; color: #2a7d39; border: 1px solid #b0e3b9; }
+  .lf-cep-status--err { background: #fce8e8; color: #b32424; border: 1px solid #f4c0c0; }
+  .lf-cep-table { width: 100%; border-collapse: collapse; }
+  .lf-cep-table th, .lf-cep-table td { padding: 10px 12px; border-bottom: 1px solid #eef1f6; text-align: left; font-size: 13px; }
+  .lf-cep-table th { color: #8b95a3; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+  .lf-cep-table td .amt { font-weight: 800; color: #d9551f; }
+  .lf-cep-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .lf-cep-pill--approved { background: #fff3eb; color: #d9551f; }
+  .lf-cep-pill--on_chain { background: #e8f8eb; color: #2a7d39; }
+  .lf-cep-recent-warning { background: #fff8d6; border: 1px solid #f0d878; padding: 10px 14px; border-radius: 8px; margin-top: 10px; font-size: 13px; color: #856200; }
+  .lf-cep-tx-form { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .lf-cep-tx-form input { flex: 1; padding: 6px 10px; font-size: 12.5px; border-radius: 6px; border: 1px solid rgba(15,22,36,.14); font-family: ui-monospace, monospace; }
+  .lf-cep-tx-form button { padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 0; background: #1a2332; color: #fff; cursor: pointer; }
+  .lf-cep-tx-link { font-family: ui-monospace, monospace; font-size: 11.5px; color: #2a7d39; text-decoration: none; }
+  .lf-cep-tx-link:hover { text-decoration: underline; }
+</style>
+
+<div class="lf-cep-wrap">
+  <h1>Manual <%= SiteSetting.coin_engine_coin_name %> Payments</h1>
+  <p class="lead">Search a user, set an amount, review, send. Each payment credits the user, appends to the public ledger, emails the recipient, and creates a permanent receipt PM.</p>
+
+  <div class="lf-cep-card" id="lf-cep-form-card">
+    <h2>Issue a payment</h2>
+
+    <div class="lf-cep-row">
+      <label>Recipient</label>
+      <div id="lf-cep-user-area" class="lf-cep-user-pick">
+        <input type="text" id="lf-cep-user-search" placeholder="Type a username..." autocomplete="off">
+      </div>
+    </div>
+
+    <div class="lf-cep-row">
+      <label>Amount (<%= SiteSetting.coin_engine_coin_name %>)</label>
+      <input type="number" id="lf-cep-amount" placeholder="e.g. 250" min="1" max="1000000">
+    </div>
+
+    <div class="lf-cep-row">
+      <label>Reason</label>
+      <input type="text" id="lf-cep-reason" placeholder="Contest winner, reno-of-the-month, manual correction, etc." maxlength="500">
+    </div>
+
+    <div id="lf-cep-recent-warning" class="lf-cep-recent-warning" style="display:none;"></div>
+
+    <div class="lf-cep-actions">
+      <button class="lf-cep-btn" id="lf-cep-review-btn" disabled>Review &amp; send</button>
+    </div>
+
+    <div id="lf-cep-status"></div>
+  </div>
+
+  <div class="lf-cep-card" id="lf-cep-confirm-card" style="display:none;">
+    <h2>Confirm</h2>
+    <div class="lf-cep-confirm" id="lf-cep-confirm-body"></div>
+    <div class="lf-cep-actions">
+      <button class="lf-cep-btn" id="lf-cep-send-btn">Approve &amp; send</button>
+      <button class="lf-cep-btn lf-cep-btn--ghost" id="lf-cep-cancel-btn">Cancel</button>
+    </div>
+  </div>
+
+  <div class="lf-cep-card">
+    <h2>Recent payments</h2>
+    <table class="lf-cep-table">
+      <thead>
+        <tr>
+          <th>When</th><th>To</th><th>Amount</th><th>Reason</th><th>Status</th><th>By</th><th>Tx signature</th>
+        </tr>
+      </thead>
+      <tbody id="lf-cep-payments-body">
+        <tr><td colspan="7" style="text-align:center;color:#8b95a3;">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function(){
+  var COIN = <%= SiteSetting.coin_engine_coin_name.to_json.html_safe %>;
+  var CSRF = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : null;
+  var selectedUser = null;
+  var debounceTimer = null;
+
+  function $(id){ return document.getElementById(id); }
+  function api(method, url, body){
+    var opts = { method: method, credentials: 'same-origin', headers: { 'Accept':'application/json' } };
+    if (body !== undefined){
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    if (CSRF) opts.headers['X-CSRF-Token'] = CSRF;
+    return fetch(url, opts).then(function(r){
+      if (!r.ok) return r.text().then(function(t){ throw new Error(r.status + ': ' + t); });
+      return r.json();
+    });
+  }
+  function fmtDate(iso){
+    if (!iso) return '';
+    var d = new Date(iso);
+    return d.toLocaleString();
+  }
+  function status(msg, ok){
+    var el = $('lf-cep-status');
+    el.className = 'lf-cep-status lf-cep-status--' + (ok ? 'ok' : 'err');
+    el.textContent = msg;
+  }
+
+  // ===== user search =====
+  function searchUsers(q){
+    api('GET', '/admin/plugins/coin-engine/users/search.json?q=' + encodeURIComponent(q))
+      .then(function(d){ renderResults(d.users || []); })
+      .catch(function(e){ console.warn(e); });
+  }
+  function renderResults(users){
+    var area = $('lf-cep-user-area');
+    var existing = area.querySelector('.lf-cep-user-results');
+    if (existing) existing.remove();
+    if (!users.length) return;
+    var box = document.createElement('div');
+    box.className = 'lf-cep-user-results';
+    users.forEach(function(u){
+      var row = document.createElement('div');
+      row.className = 'lf-cep-user-result';
+      var avatarUrl = u.avatar_template ? u.avatar_template.replace('{size}', '40') : '';
+      row.innerHTML = (avatarUrl ? '<img src="' + avatarUrl + '" alt="">' : '<span style="width:28px"></span>')
+                    + '<strong>@' + u.username + '</strong>'
+                    + (u.name ? '<span>' + u.name + '</span>' : '');
+      row.addEventListener('click', function(){ pickUser(u); });
+      box.appendChild(row);
+    });
+    area.appendChild(box);
+  }
+  function pickUser(u){
+    selectedUser = u;
+    var area = $('lf-cep-user-area');
+    area.querySelectorAll('.lf-cep-user-results').forEach(function(el){ el.remove(); });
+    var avatarUrl = u.avatar_template ? u.avatar_template.replace('{size}', '40') : '';
+    area.innerHTML = '<div class="lf-cep-selected">'
+                   + (avatarUrl ? '<img src="' + avatarUrl + '" alt="">' : '')
+                   + '<span>@' + u.username + '</span>'
+                   + '<button type="button" id="lf-cep-clear-user">x</button>'
+                   + '</div>';
+    document.getElementById('lf-cep-clear-user').addEventListener('click', clearUser);
+    refreshButtonState();
+    showRecentForUser(u.id);
+  }
+  function clearUser(){
+    selectedUser = null;
+    var area = $('lf-cep-user-area');
+    area.innerHTML = '<input type="text" id="lf-cep-user-search" placeholder="Type a username..." autocomplete="off">';
+    bindSearch();
+    $('lf-cep-recent-warning').style.display = 'none';
+    refreshButtonState();
+  }
+  function showRecentForUser(uid){
+    api('GET', '/admin/plugins/coin-engine/users/' + uid + '/payments.json')
+      .then(function(d){
+        var w = $('lf-cep-recent-warning');
+        var recent = (d.payments || []).filter(function(p){
+          return new Date(p.created_at) > new Date(Date.now() - 7*86400*1000);
+        });
+        if (!recent.length){ w.style.display = 'none'; return; }
+        var total = recent.reduce(function(s, p){ return s + p.amount; }, 0);
+        w.style.display = 'block';
+        w.innerHTML = '⚠ This user received <strong>' + recent.length + ' payment(s) totalling ' + total + ' ' + COIN + '</strong> in the last 7 days. Double-check before sending another.';
+      })
+      .catch(function(){});
+  }
+  function bindSearch(){
+    var input = document.getElementById('lf-cep-user-search');
+    if (!input) return;
+    input.addEventListener('input', function(e){
+      clearTimeout(debounceTimer);
+      var q = e.target.value;
+      if (q.length < 2){
+        var existing = $('lf-cep-user-area').querySelector('.lf-cep-user-results');
+        if (existing) existing.remove();
+        return;
+      }
+      debounceTimer = setTimeout(function(){ searchUsers(q); }, 200);
+    });
+  }
+  bindSearch();
+
+  function refreshButtonState(){
+    var amount = parseInt($('lf-cep-amount').value, 10) || 0;
+    $('lf-cep-review-btn').disabled = !(selectedUser && amount > 0);
+  }
+  $('lf-cep-amount').addEventListener('input', refreshButtonState);
+  $('lf-cep-reason').addEventListener('input', refreshButtonState);
+
+  // ===== review + send =====
+  $('lf-cep-review-btn').addEventListener('click', function(){
+    var amount = parseInt($('lf-cep-amount').value, 10) || 0;
+    var reason = $('lf-cep-reason').value.trim() || 'Manual payment';
+    $('lf-cep-confirm-body').innerHTML =
+      'Issue <strong>+' + amount + ' ' + COIN + '</strong> to <strong>@' + selectedUser.username + '</strong> for: ' +
+      '<em>"' + reason + '"</em>?<br><br>This will credit the user, append to the public ledger, send them an email and a receipt PM. Cannot be undone via UI; manual reversal would need a separate corrective payment.';
+    $('lf-cep-confirm-card').style.display = 'block';
+    $('lf-cep-confirm-card').scrollIntoView({behavior: 'smooth'});
+  });
+
+  $('lf-cep-cancel-btn').addEventListener('click', function(){
+    $('lf-cep-confirm-card').style.display = 'none';
+  });
+
+  $('lf-cep-send-btn').addEventListener('click', function(){
+    var amount = parseInt($('lf-cep-amount').value, 10) || 0;
+    var reason = $('lf-cep-reason').value.trim() || 'Manual payment';
+    $('lf-cep-send-btn').disabled = true;
+    api('POST', '/admin/plugins/coin-engine/payments.json', {
+      user_id: selectedUser.id,
+      amount:  amount,
+      reason:  reason
+    }).then(function(d){
+      var p = d.payment;
+      var r = d.results || {};
+      var summary = 'Payment #' + p.id + ' issued: ' +
+        (r.score_credited ? '✓ score credited' : '✗ score NOT credited') + ', ' +
+        (r.ledger_appended ? '✓ ledger appended' : '✗ ledger skipped') + ', ' +
+        (r.email_sent ? '✓ email sent' : '- email skipped') + ', ' +
+        (r.receipt_pm_created ? '✓ receipt PM' : '- receipt PM skipped');
+      status(summary, true);
+      // Reset form
+      $('lf-cep-amount').value = '';
+      $('lf-cep-reason').value = '';
+      clearUser();
+      $('lf-cep-confirm-card').style.display = 'none';
+      $('lf-cep-send-btn').disabled = false;
+      loadPayments();
+    }).catch(function(e){
+      status('Error: ' + e.message, false);
+      $('lf-cep-send-btn').disabled = false;
+    });
+  });
+
+  // ===== payments table =====
+  function loadPayments(){
+    api('GET', '/admin/plugins/coin-engine/payments.json?limit=50')
+      .then(function(d){ renderPayments(d.payments || []); })
+      .catch(function(e){
+        $('lf-cep-payments-body').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#b32424;">Failed to load: ' + e.message + '</td></tr>';
+      });
+  }
+  function renderPayments(list){
+    var body = $('lf-cep-payments-body');
+    if (!list.length){
+      body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8b95a3;">No payments yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(function(p){
+      var statusClass = p.status === 'on_chain' ? 'on_chain' : 'approved';
+      var txCell;
+      if (p.tx_signature){
+        txCell = '<a class="lf-cep-tx-link" href="https://solscan.io/tx/' + encodeURIComponent(p.tx_signature) + '" target="_blank" rel="noopener">' + p.tx_signature.substring(0,10) + '...</a>';
+      } else {
+        txCell = '<form class="lf-cep-tx-form" data-pid="' + p.id + '">'
+               + '<input type="text" placeholder="Solana tx signature" maxlength="200">'
+               + '<button type="submit">Add</button></form>';
+      }
+      return '<tr>'
+           + '<td>' + fmtDate(p.created_at) + '</td>'
+           + '<td>@' + (p.username || '?') + '</td>'
+           + '<td><span class="amt">+' + p.amount + ' ' + COIN + '</span></td>'
+           + '<td>' + (p.reason || '') + '</td>'
+           + '<td><span class="lf-cep-pill lf-cep-pill--' + statusClass + '">' + p.status + '</span></td>'
+           + '<td>@' + (p.issued_by || 'system') + '</td>'
+           + '<td>' + txCell + '</td>'
+           + '</tr>';
+    }).join('');
+    body.querySelectorAll('.lf-cep-tx-form').forEach(function(form){
+      form.addEventListener('submit', function(e){
+        e.preventDefault();
+        var pid = form.getAttribute('data-pid');
+        var tx = form.querySelector('input').value.trim();
+        if (!tx) return;
+        api('PUT', '/admin/plugins/coin-engine/payments/' + pid + '/tx.json', { tx_signature: tx })
+          .then(function(){ loadPayments(); })
+          .catch(function(e){ alert('Failed: ' + e.message); });
+      });
+    });
+  }
+  loadPayments();
+})();
+</script>

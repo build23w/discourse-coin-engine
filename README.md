@@ -85,8 +85,10 @@ The theme component **hrr-ux-pack** (separately deployed at `theme id 31` on hom
 **Discourse 3.2 - 2026.5+**. The plugin keeps a small API surface so 2026.x rebuilds don't break.
 
 Compat fix history:
-- **v0.2.2** (2026-04-29) -- removed `register_asset 'stylesheets/coin-engine-admin.scss', :admin` from `plugin.rb`. The referenced file didn't exist in the repo, so `assets:precompile` hit `Sass::CompileError: Can't find stylesheet to import.` during container rebuild. There's no admin UI to style yet; re-add the register and ship the matching SCSS file when an admin panel lands.
-- **v0.2.1** (2026-04-29) -- replaced `User::USERNAME_ROUTE_FORMAT` with inline regex `%r{[\w.\-]+?}` in route constraints. That constant was removed in Discourse 2026.x and crashed plugin boot during `db:migrate` with `NameError: uninitialized constant User::USERNAME_ROUTE_FORMAT`.
+- **v0.3.0** (2026-04-29) -- new admin UI for manual payments. Adds `coin_engine_payments` table (post_migrate), `DiscourseCoinEngine::Payment` model, `AdminPaymentsController` with index/list/search_users/user_payments/create/update_tx_signature endpoints, server-rendered admin page at `/admin/plugins/coin-engine`, manual_payment_receipt mailer + email template, receipt PM creation, `EmailThrottle` lib (max 1 engagement email per user per day), polished weekly_digest + personal_recap templates, new daily_top_picks scheduled job.
+- **v0.2.3** (2026-04-29) -- raw SQL in `coin_engine_score` / `coin_engine_rank` serializers (the `::GamificationScore` constant doesn't exist on this install; the model is namespaced `DiscourseGamification::GamificationScore`). The original `rescue` was silently swallowing the NameError and returning 0.
+- **v0.2.2** (2026-04-29) -- removed `register_asset 'stylesheets/coin-engine-admin.scss', :admin` from `plugin.rb`. The referenced file didn't exist in the repo, so `assets:precompile` hit `Sass::CompileError: Can't find stylesheet to import.` during container rebuild.
+- **v0.2.1** (2026-04-29) -- replaced `User::USERNAME_ROUTE_FORMAT` with inline regex `%r{[\w.\-]+?}` in route constraints. That constant was removed in Discourse 2026.x and crashed plugin boot during `db:migrate`.
 
 If you hit a `NameError` / `uninitialized constant` / `Can't find stylesheet` failure on rebuild, please open an issue with the stack trace.
 

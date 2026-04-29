@@ -1,44 +1,58 @@
-<table style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#1a2332;">
+<table role="presentation" style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#1a2332;width:100%;">
   <tr>
-    <td style="padding:24px 0;border-bottom:3px solid <%= @brand_color %>;">
-      <h1 style="margin:0;font-size:22px;font-weight:800;">Your week on <%= @site_name %></h1>
-      <p style="margin:6px 0 0;color:#5a6573;font-size:13px;">Here's how you did, <strong><%= @user.username %></strong>.</p>
+    <td style="padding:24px 0 14px;">
+      <div style="display:inline-block;padding:4px 12px;background:<%= @brand_color %>;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:1.4px;border-radius:999px;">YOUR WEEK</div>
+      <h1 style="margin:14px 0 6px;font-size:26px;font-weight:900;letter-spacing:-.3px;line-height:1.15;">Hey <strong>@<%= @user.username %></strong> &mdash; here's how you did.</h1>
     </td>
   </tr>
+
   <tr>
-    <td style="padding:24px 0;text-align:center;background:#fff3eb;border-radius:12px;margin-top:16px;">
-      <div style="font-size:11px;font-weight:800;color:<%= @brand_color %>;letter-spacing:1.4px;text-transform:uppercase;">Earned this week</div>
-      <div style="font-size:38px;font-weight:900;color:#1a2332;line-height:1.1;margin:6px 0 2px;"><%= number_with_delimiter(@week_earned) %></div>
-      <div style="font-size:13px;font-weight:700;color:<%= @brand_color %>;letter-spacing:.5px;"><%= @coin_name %></div>
+    <td style="padding:6px 0 18px;">
+      <table role="presentation" style="width:100%;border-collapse:collapse;background:linear-gradient(135deg,#fff3eb,#ffffff);border:1px solid rgba(255,107,53,.3);border-radius:14px;">
+        <tr>
+          <td style="padding:26px 22px;text-align:center;">
+            <div style="font-size:11px;font-weight:800;color:<%= @brand_color %>;letter-spacing:1.4px;text-transform:uppercase;">Earned this week</div>
+            <div style="font-size:46px;font-weight:900;color:#1a2332;line-height:1;margin:8px 0 6px;letter-spacing:-1.5px;">+<%= number_with_delimiter(@week_earned) %></div>
+            <div style="font-size:13.5px;font-weight:800;color:<%= @brand_color %>;letter-spacing:.5px;"><%= @coin_name %></div>
+          </td>
+        </tr>
+      </table>
     </td>
   </tr>
+
   <% if @streak_days && @streak_days > 0 %>
     <tr>
-      <td style="padding:18px 0;font-size:14px;">
-        <span style="display:inline-block;padding:5px 12px;background:#1a2332;color:#fff;border-radius:999px;font-weight:700;font-size:12px;">&#128293; <%= @streak_days %>-day streak</span>
+      <td style="padding:6px 0 14px;text-align:center;">
+        <span style="display:inline-block;padding:8px 16px;background:#1a2332;color:#fff;border-radius:999px;font-weight:800;font-size:13px;letter-spacing:.3px;">&#128293; <%= @streak_days %>-day streak</span>
       </td>
     </tr>
   <% end %>
+
   <% if @recent_badges && @recent_badges.any? %>
     <tr>
-      <td style="padding:18px 0;">
-        <h2 style="margin:0 0 12px;font-size:15px;font-weight:700;color:<%= @brand_color %>;letter-spacing:.4px;text-transform:uppercase;">New badges this week</h2>
+      <td style="padding:14px 0 6px;">
+        <h2 style="margin:0 0 12px;font-size:14px;font-weight:800;color:<%= @brand_color %>;letter-spacing:.5px;text-transform:uppercase;">&#127942; Unlocked this week</h2>
         <% @recent_badges.each do |b| %>
-          <div style="padding:10px 14px;border:1px solid #eef1f6;border-radius:8px;margin-bottom:6px;font-size:14px;font-weight:600;">
-            <%= b[:name] %><% if b[:allow_title] %> <span style="color:#5a6573;font-size:12px;font-weight:500;">&middot; title unlocked</span><% end %>
+          <div style="padding:12px 14px;border:1px solid #eef1f6;border-left:3px solid <%= @brand_color %>;border-radius:8px;margin-bottom:6px;font-size:14px;">
+            <strong><%= b[:name] %></strong>
+            <% if b[:allow_title] %>
+              <span style="color:#5a6573;font-size:12px;font-weight:500;display:block;margin-top:2px;">title unlocked &middot; pick it in your <a href="<%= @site_url %>/my/preferences/account" style="color:<%= @brand_color %>;text-decoration:underline;">profile preferences</a></span>
+            <% end %>
           </div>
         <% end %>
       </td>
     </tr>
   <% end %>
+
   <tr>
-    <td style="padding:24px 0 0;text-align:center;">
-      <a href="<%= @site_url %>/" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:8px;font-size:14px;">Back to <%= @site_name %> &rarr;</a>
+    <td style="padding:22px 0 0;text-align:center;">
+      <a href="<%= @site_url %>/" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:8px;font-size:14.5px;">Pick up where you left off &rarr;</a>
     </td>
   </tr>
+
   <tr>
     <td style="padding:24px 0 8px;font-size:12px;color:#8b95a3;text-align:center;">
-      <a href="<%= @site_url %>/my/preferences/emails" style="color:#8b95a3;">Email settings</a>
+      <a href="<%= @site_url %>/my/preferences/emails" style="color:#8b95a3;text-decoration:underline;">Email settings</a>
     </td>
   </tr>
 </table>
