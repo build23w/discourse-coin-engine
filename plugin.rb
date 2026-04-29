@@ -2,9 +2,9 @@
 
 # name: discourse-coin-engine
 # about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.1.0
+# version: 0.2.1
 # authors: LF Builders
-# url: https://github.com/lf-builders/discourse-coin-engine
+# url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
 
 enabled_site_setting :coin_engine_enabled
@@ -40,12 +40,16 @@ after_initialize do
   load File.expand_path('../lib/discourse_coin_engine/ledger_parser.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/tier_resolver.rb', __FILE__)
 
+  # Username route constraint -- Discourse 2026.x removed User::USERNAME_ROUTE_FORMAT.
+  # Inline regex matches the same characters Discourse usernames allow. The
+  # controllers also validate via User.find_by so this constraint is defense-in-depth.
   Discourse::Application.routes.append do
+    username_re = %r{[\w.\-]+?}
     get  '/coin-engine/config.json'                      => 'discourse_coin_engine/config#show'
     get  '/coin-engine/leaderboard.json'                 => 'discourse_coin_engine/leaderboard#index'
     get  '/coin-engine/payments.json'                    => 'discourse_coin_engine/payments#index'
-    get  '/coin-engine/user/:username/recap.json'        => 'discourse_coin_engine/user_recap#show', constraints: { username: ::User::USERNAME_ROUTE_FORMAT }
-    get  '/coin-engine/user/:username/streak.json'       => 'discourse_coin_engine/streak#show',     constraints: { username: ::User::USERNAME_ROUTE_FORMAT }
+    get  '/coin-engine/user/:username/recap.json'        => 'discourse_coin_engine/user_recap#show', constraints: { username: username_re }
+    get  '/coin-engine/user/:username/streak.json'       => 'discourse_coin_engine/streak#show',     constraints: { username: username_re }
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
   end
 

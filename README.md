@@ -80,6 +80,12 @@ Every setting starts with `coin_engine_`. See `config/settings.yml` for the cano
 
 The theme component **hrr-ux-pack** (separately deployed at `theme id 31` on home.renovation.reviews) consumes this plugin's settings via the `Discourse.SiteSettings.coin_engine_*` exposure (settings declared `client: true`). When the plugin is missing, the component falls back to hardcoded $RENO defaults.
 
+## Compatibility
+
+**Discourse 3.2 - 2026.5+**. v0.2.1 (2026-04-29) replaced the `User::USERNAME_ROUTE_FORMAT` constant in route constraints with an inline regex; that constant was removed in Discourse 2026.x and would crash plugin boot with `NameError: uninitialized constant User::USERNAME_ROUTE_FORMAT`. The fix is forward-compatible with both old and new Discourse versions.
+
+If you hit a `NameError` or `uninitialized constant` failure during `bundle exec rake db:migrate` for any other Rails 8 / Discourse 2026.x deprecation, please open an issue with the stack trace — the plugin's API surface is small and keeping it 2026-compatible is intentional.
+
 ## License
 
 MIT, in keeping with most Discourse plugin conventions.
