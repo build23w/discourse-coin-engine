@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.2.2
+# version: 0.2.3
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -63,25 +63,47 @@ after_initialize do
   # immune to WAF rate-limiting that currently 403s our /leaderboard/1.json
   # and /latest.json XHRs.
 
-  add_to_serializer(:current_user, :coin_engine_score, include_condition: -> { SiteSetting.coin_engine_enabled }) do
-    next 0 unless object && object.id && object.id > 0
+  # Use raw SQL for the gamification table. The plugin's model class is namespaced
+  # as `DiscourseGamification::GamificationScore` on some installs; looking up a
+  # bare `::GamificationScore` raises NameError. Raw SQL bypasses the constant
+  # entirely and returns the real number (the serializer was returning 0 because
+  # the rescue was catching that NameError silently).
+  ::DiscourseCoinEngine.define_singleton_method(:coin_user_total) do |user_id|
+    next 0 unless user_id && user_id > 0
     begin
-      Rails.cache.fetch("coin_engine_score_user_#{object.id}", expires_in: 5.minutes) do
-        ::GamificationScore.where(user_id: object.id).sum(:score).to_i
-      end
+      sql = "SELECT COALESCE(SUM(score), 0)::int AS total FROM gamification_scores WHERE user_id = $1"
+      result = ActiveRecord::Base.connection.exec_query(sql, 'coin_engine_user_total', [user_id])
+      (result.rows.first && result.rows.first.first || 0).to_i
     rescue StandardError
       0
     end
   end
 
+  add_to_serializer(:current_user, :coin_engine_score, include_condition: -> { SiteSetting.coin_engine_enabled }) do
+    next 0 unless object && object.id && object.id > 0
+    Rails.cache.fetch("coin_engine_score_user_#{object.id}", expires_in: 5.minutes) do
+      ::DiscourseCoinEngine.coin_user_total(object.id)
+    end
+  end
+
   add_to_serializer(:current_user, :coin_engine_rank, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     next nil unless object && object.id && object.id > 0
-    begin
-      Rails.cache.fetch("coin_engine_rank_user_#{object.id}", expires_in: 10.minutes) do
-        rows = ::DiscourseCoinEngine::LeaderboardQuery.new(period: 'all', limit: 5000).call
-        hit = rows.find { |r| r[:user_id] == object.id }
-        hit && hit[:rank]
-      end
+    Rails.cache.fetch("coin_engine_rank_user_#{object.id}", expires_in: 10.minutes) do
+      sql = <<~SQL
+        WITH totals AS (
+          SELECT user_id, SUM(score) AS total
+          FROM gamification_scores
+          WHERE user_id > 0
+          GROUP BY user_id
+        )
+        SELECT rank
+        FROM (
+          SELECT user_id, RANK() OVER (ORDER BY total DESC) AS rank
+          FROM totals
+        ) ranked
+        WHERE user_id = $1
+      SQL
+      ActiveRecord::Base.connection.exec_query(sql, 'coin_engine_rank', [object.id]).rows.first&.first
     rescue StandardError
       nil
     end
@@ -89,10 +111,8 @@ after_initialize do
 
   add_to_serializer(:current_user, :coin_engine_streak, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     next 0 unless object && object.id && object.id > 0
-    begin
-      Rails.cache.fetch("coin_engine_streak_user_#{object.id}", expires_in: 1.hour) do
-        ::DiscourseCoinEngine::StreakCalculator.new(user_id: object.id).current
-      end
+    Rails.cache.fetch("coin_engine_streak_user_#{object.id}", expires_in: 1.hour) do
+      ::DiscourseCoinEngine::StreakCalculator.new(user_id: object.id).current
     rescue StandardError
       0
     end
@@ -102,7 +122,7 @@ after_initialize do
     next nil unless object && object.id && object.id > 0
     begin
       score = Rails.cache.fetch("coin_engine_score_user_#{object.id}", expires_in: 5.minutes) do
-        ::GamificationScore.where(user_id: object.id).sum(:score).to_i
+        ::DiscourseCoinEngine.coin_user_total(object.id)
       end
       ::DiscourseCoinEngine::TierResolver.new(score).call
     rescue StandardError
@@ -111,8 +131,6 @@ after_initialize do
   end
 
   # Topic-list-item: always expose image_url under a stable plugin field name.
-  # Discourse only renders <img> in topic-list rows when `topic_thumbnails` site
-  # setting is on; this serializer field gives the component the URL regardless.
   add_to_serializer(:topic_list_item, :coin_engine_image_url, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     object.image_url.presence
   end
@@ -123,7 +141,7 @@ after_initialize do
 
   if defined?(DiscourseEvent)
     DiscourseEvent.on(:user_promoted) do |args|
-      # Reserved for tier-up email trigger when plugin emits coin tier-up events.
+      # Reserved for tier-up email trigger.
     end
   end
 end
