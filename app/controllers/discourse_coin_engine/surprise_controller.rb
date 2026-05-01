@@ -33,7 +33,7 @@ module DiscourseCoinEngine
           reward_type: type,
           rarity_roll: roll.round(4).to_s,
         )
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
       render json: { claimed: true, amount: reward, rarity: type }
     end
@@ -58,7 +58,7 @@ module DiscourseCoinEngine
           'ce_freeze_charge', [current_user.id, Date.today, -cost]
         )
         f = StreakFreeze.create!(user_id: current_user.id, freeze_date: d, cost_paid: cost)
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
         Rails.cache.delete("coin_engine_streak_user_#{current_user.id}")
       end
       render json: { id: f.id, freeze_date: f.freeze_date, cost: cost }

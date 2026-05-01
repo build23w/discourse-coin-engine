@@ -42,8 +42,8 @@ module DiscourseCoinEngine
           note: params[:note].to_s[0, 280],
           status: 'sent',
         )
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
-        Rails.cache.delete("coin_engine_score_user_#{recipient.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
+        ::DiscourseCoinEngine.refresh_user_score(recipient.id)
       end
       render json: { id: tip.id, amount: amount, recipient: recipient.username, status: 'sent' }
     rescue ActiveRecord::RecordInvalid => e
@@ -91,7 +91,7 @@ module DiscourseCoinEngine
           status: 'active',
         )
         item.decrement!(:stock) if item.stock > 0
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
       render json: { redemption_id: red.id, item: item.slug, expires_at: red.expires_at }
     end
@@ -129,7 +129,7 @@ module DiscourseCoinEngine
           expires_at: expires_in.days.from_now,
           note: params[:note].to_s[0, 1000],
         )
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
       render json: { id: bounty.id, amount: amount, expires_at: bounty.expires_at }
     end
@@ -151,7 +151,7 @@ module DiscourseCoinEngine
           'ce_bounty_award', [winner.id, Date.today, bounty.amount]
         )
         bounty.update!(status: 'awarded', winner_user_id: winner.id, winning_post_id: post.id, awarded_at: Time.now)
-        Rails.cache.delete("coin_engine_score_user_#{winner.id}")
+        ::DiscourseCoinEngine.refresh_user_score(winner.id)
       end
       render json: { id: bounty.id, status: 'awarded', winner: winner.username }
     end
@@ -194,7 +194,7 @@ module DiscourseCoinEngine
           unlocks_at: duration.days.from_now,
           status: 'active',
         )
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
       render json: { id: stake.id, amount: amount, duration_days: duration, multiplier: multiplier, unlocks_at: stake.unlocks_at }
     end
@@ -216,7 +216,7 @@ module DiscourseCoinEngine
           'ce_stake_payout', [current_user.id, Date.today, payout]
         )
         stake.update!(status: stake.matured? ? 'matured' : 'early_unlocked', rewards_paid: payout - stake.amount)
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
       render json: { id: stake.id, payout: payout, matured: stake.matured? }
     end

@@ -29,7 +29,7 @@ module ::Jobs
           ::DiscourseCoinEngine::RandomAirdrop.create!(
             user_id: uid, amount: amount, airdrop_date: today, reason: 'random_kindness'
           )
-          Rails.cache.delete("coin_engine_score_user_#{uid}")
+          ::DiscourseCoinEngine.refresh_user_score(uid)
         end
       end
     rescue StandardError => e

@@ -42,7 +42,7 @@ module ::Jobs
           user_id: user_id, post_id: post_id, topic_id: topic_id,
           reason: 'underrated', reward: reward, featured_at: Time.now
         )
-        Rails.cache.delete("coin_engine_score_user_#{user_id}")
+        ::DiscourseCoinEngine.refresh_user_score(user_id)
       end
     rescue StandardError => e
       Rails.logger.warn("[coin_engine] spotlight rotation job: #{e.class} #{e.message}")

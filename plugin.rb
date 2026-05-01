@@ -2,12 +2,38 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.6.5
+# version: 0.6.7
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
 
 enabled_site_setting :coin_engine_enabled
+
+# v0.6.6: a single cache-refresh helper that busts BOTH our coin_engine_score
+# serializer cache AND the discourse-gamification leaderboard materialized view.
+# Without the materialized-view refresh, the recipient's profile total stays
+# stale because Discourse-gamification reads from its cached view, not the
+# raw gamification_scores table. Wrapped in best-effort rescue so it never
+# blocks a credit even if the gamification plugin's API surface changes.
+module ::DiscourseCoinEngine
+  def self.refresh_user_score(user_id)
+    return unless user_id && user_id.to_i > 0
+    begin
+      Rails.cache.delete("coin_engine_score_user_#{user_id}")
+      Rails.cache.delete("coin_engine_rank_user_#{user_id}")
+      Rails.cache.delete("coin_engine_streak_user_#{user_id}")
+    rescue StandardError
+      nil
+    end
+    begin
+      if defined?(::DiscourseGamification::LeaderboardCachedView)
+        ::DiscourseGamification::LeaderboardCachedView.refresh
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[coin_engine] LeaderboardCachedView.refresh failed: #{e.class}: #{e.message}")
+    end
+  end
+end
 
 # (No registered stylesheets in v0.2.x -- there is no admin UI to style. Re-add
 # `register_asset 'stylesheets/coin-engine-admin.scss', :admin` and ship the
@@ -295,18 +321,21 @@ after_initialize do
       # Reserved for tier-up email trigger.
     end
   end
+  end
 
   # ===== v0.6.3 -- surface exceptions from phase controllers as JSON =====
-  # Without this, Discourse silently 500s with no log line for some exception
-  # classes, making field debugging impossible. Monkey-patch here so we don't
-  # have to edit each controller class body (the file editor has been
-  # truncating large files this session).
   [
     DiscourseCoinEngine::EconomyController,
     DiscourseCoinEngine::SocialController,
     DiscourseCoinEngine::IdentityController,
     DiscourseCoinEngine::GovernanceController,
     DiscourseCoinEngine::SurpriseController,
+    DiscourseCoinEngine::AdminPaymentsController,
+    DiscourseCoinEngine::AdminAirdropController,
+    DiscourseCoinEngine::EmbedController,
+    DiscourseCoinEngine::ProfileController,
+    DiscourseCoinEngine::InsightsController,
+    DiscourseCoinEngine::ThemedWeekController,
   ].each do |klass|
     klass.class_eval do
       rescue_from StandardError do |e|

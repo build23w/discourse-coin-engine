@@ -82,7 +82,7 @@ module DiscourseCoinEngine
           paid_amount: cost,
           status: 'scheduled',
         )
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
       render json: { id: booking.id, scheduled_at: booking.scheduled_at, cost: cost }
     end
@@ -135,7 +135,7 @@ module DiscourseCoinEngine
           status: 'active',
           expires_at: expires_in.days.from_now,
         )
-        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
       render json: { id: pb.id, expires_at: pb.expires_at }
     end
