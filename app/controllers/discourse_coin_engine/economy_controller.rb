@@ -27,11 +27,11 @@ module DiscourseCoinEngine
         # Debit sender, credit recipient via gamification_scores rows.
         ts = Date.today
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_tip_debit', [current_user.id, ts, -amount]
         )
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_tip_credit', [recipient.id, ts, amount]
         )
         tip = Tip.create!(
@@ -80,7 +80,7 @@ module DiscourseCoinEngine
       red = nil
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_redeem_debit', [current_user.id, Date.today, -item.price]
         )
         red = Redemption.create!(
@@ -117,7 +117,7 @@ module DiscourseCoinEngine
       bounty = nil
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_bounty_lock', [current_user.id, Date.today, -amount]
         )
         bounty = Bounty.create!(
@@ -147,7 +147,7 @@ module DiscourseCoinEngine
 
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_bounty_award', [winner.id, Date.today, bounty.amount]
         )
         bounty.update!(status: 'awarded', winner_user_id: winner.id, winning_post_id: post.id, awarded_at: Time.now)
@@ -182,7 +182,7 @@ module DiscourseCoinEngine
       stake = nil
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_stake_lock', [current_user.id, Date.today, -amount]
         )
         stake = Stake.create!(
@@ -212,7 +212,7 @@ module DiscourseCoinEngine
                end
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_stake_payout', [current_user.id, Date.today, payout]
         )
         stake.update!(status: stake.matured? ? 'matured' : 'early_unlocked', rewards_paid: payout - stake.amount)
