@@ -71,7 +71,7 @@ module DiscourseCoinEngine
       booking = nil
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
           'ce_ama_charge', [current_user.id, Date.today, -cost]
         )
         booking = AmaBooking.create!(
@@ -123,7 +123,7 @@ module DiscourseCoinEngine
       pb = nil
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
+          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
           'ce_pb_lock', [current_user.id, Date.today, -reward]
         )
         pb = PhotoBounty.create!(

@@ -75,7 +75,7 @@ module DiscourseCoinEngine
         # Credit gamification_scores via raw SQL (bypass model namespace issues)
         begin
           ActiveRecord::Base.connection.exec_insert(
-            "INSERT INTO gamification_scores (user_id, date, score, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
+            "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
             'coin_engine_credit',
             [user.id, Date.today, amount]
           )

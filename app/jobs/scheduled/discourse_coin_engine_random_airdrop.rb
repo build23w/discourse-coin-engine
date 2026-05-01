@@ -23,7 +23,7 @@ module ::Jobs
         next if ::DiscourseCoinEngine::RandomAirdrop.find_by(user_id: uid, airdrop_date: today)
         ActiveRecord::Base.transaction do
           ActiveRecord::Base.connection.exec_query(
-            "INSERT INTO gamification_scores (user_id, date, score, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
+            "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
             'ce_airdrop_random', [uid, today, amount]
           )
           ::DiscourseCoinEngine::RandomAirdrop.create!(
