@@ -90,3 +90,178 @@ plugins:
     default: ""
   coin_engine_webhook_events:
     default: "tier_up,airdrop,milestone"
+
+  # ===== v0.5.0: Custom titles per tier =====
+  # Pipe-separated, must match tier_thresholds length. Empty entries fall back to
+  # tier_names. Surfaced on profile pages, user cards, embed badges.
+  coin_engine_custom_titles:
+    default: "Newcomer|Forum Friend|Reno Regular|Renovation Pro|Master Builder|Legend"
+    client: true
+
+  # ===== v0.5.0: Public profile + embed toggles =====
+  coin_engine_public_profile_enabled:
+    default: true
+    client: true
+  coin_engine_embed_badge_enabled:
+    default: true
+    client: true
+
+  # ===== v0.5.0: Streak calendar =====
+  coin_engine_streak_calendar_enabled:
+    default: true
+    client: true
+
+  # ===== v0.5.0: Themed week (rotates weekly via admin) =====
+  coin_engine_themed_week_name:
+    default: ""
+    client: true
+  coin_engine_themed_week_tagline:
+    default: ""
+    client: true
+  coin_engine_themed_week_hashtag:
+    default: ""
+    client: true
+  coin_engine_themed_week_category_id:
+    default: 0
+    client: true
+    min: 0
+  coin_engine_themed_week_multiplier:
+    default: 1.5
+    client: true
+    min: 1.0
+    max: 5.0
+  coin_engine_themed_week_ends_at:
+    default: ""
+    client: true
+
+  # ===== v0.5.0: Goals (client-side primarily, but cap is server-enforced) =====
+  coin_engine_goals_enabled:
+    default: true
+    client: true
+  coin_engine_max_monthly_goal:
+    default: 50000
+    client: true
+    min: 100
+    max: 1000000
+
+  # ===== v0.5.0: Tier visual flair =====
+  coin_engine_animated_ring_min_tier:
+    default: 3
+    client: true
+    min: 0
+    max: 10
+  coin_engine_show_rank_in_user_card:
+    default: true
+    client: true
+
+  # ===== v0.6.0 Phase 2 — Economy =====
+  coin_engine_tips_enabled:
+    default: true
+    client: true
+  coin_engine_tip_min_amount:
+    default: 10
+    client: true
+    min: 1
+    max: 100000
+  coin_engine_tip_max_per_day:
+    default: 1000
+    client: true
+    min: 0
+    max: 1000000
+  coin_engine_shop_enabled:
+    default: true
+    client: true
+  coin_engine_bounties_enabled:
+    default: true
+    client: true
+  coin_engine_bounty_min_amount:
+    default: 50
+    client: true
+    min: 1
+    max: 1000000
+  coin_engine_stakes_enabled:
+    default: true
+    client: true
+
+  # ===== v0.6.0 Phase 3 — Social =====
+  coin_engine_squads_enabled:
+    default: true
+    client: true
+  coin_engine_mentorship_enabled:
+    default: true
+    client: true
+  coin_engine_mentorship_milestone_reward:
+    default: 250
+    client: true
+    min: 0
+    max: 100000
+  coin_engine_spotlight_rotation_enabled:
+    default: false
+  coin_engine_spotlight_reward:
+    default: 100
+    min: 0
+    max: 100000
+
+  # ===== v0.6.0 Phase 4 — Identity =====
+  coin_engine_achievements_enabled:
+    default: true
+    client: true
+  coin_engine_tournaments_enabled:
+    default: true
+    client: true
+  coin_engine_ama_enabled:
+    default: true
+    client: true
+  coin_engine_ama_booking_cost:
+    default: 100
+    client: true
+    min: 0
+    max: 100000
+  coin_engine_quest_suggestions_enabled:
+    default: true
+    client: true
+  coin_engine_photo_bounties_enabled:
+    default: true
+    client: true
+  coin_engine_wrapped_enabled:
+    default: true
+    client: true
+
+  # ===== v0.6.0 Phase 5 — Governance =====
+  coin_engine_dao_votes_enabled:
+    default: true
+    client: true
+  coin_engine_verified_pro_enabled:
+    default: true
+    client: true
+
+  # ===== v0.6.0 Phase 6 — Surprise & Polish =====
+  coin_engine_daily_chest_enabled:
+    default: true
+    client: true
+  coin_engine_streak_freeze_enabled:
+    default: true
+    client: true
+  coin_engine_streak_freeze_cost:
+    default: 50
+    client: true
+    min: 0
+    max: 100000
+  coin_engine_streak_freeze_monthly_cap:
+    default: 2
+    client: true
+    min: 0
+    max: 30
+  coin_engine_auctions_enabled:
+    default: true
+    client: true
+  coin_engine_random_airdrop_enabled:
+    default: false
+  coin_engine_random_airdrop_count:
+    default: 5
+    min: 0
+    max: 100
+  coin_engine_random_airdrop_amount:
+    default: 25
+    min: 0
+    max: 100000

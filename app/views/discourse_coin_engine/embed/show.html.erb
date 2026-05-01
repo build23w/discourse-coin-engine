@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><%= @display %> — <%= @coin %> badge</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif}
+  .ce-embed{
+    display:flex;align-items:center;gap:14px;
+    padding:14px 18px;border-radius:14px;
+    background:linear-gradient(135deg,<%= @brand %> 0%,#0f1624 100%);
+    color:#fff;text-decoration:none;
+    box-shadow:0 8px 24px rgba(15,22,36,.18);
+    max-width:520px;
+  }
+  .ce-embed:hover{transform:translateY(-1px);transition:transform .15s ease}
+  .ce-embed__avatar{
+    width:54px;height:54px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.4);
+    flex:0 0 auto;background:#0f1624;object-fit:cover;
+  }
+  .ce-embed__body{flex:1;min-width:0}
+  .ce-embed__name{
+    font-size:15px;font-weight:800;line-height:1.2;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .ce-embed__sub{
+    font-size:11.5px;opacity:.75;margin-top:2px;letter-spacing:.3px;
+  }
+  .ce-embed__stats{
+    display:flex;gap:16px;align-items:baseline;
+    flex:0 0 auto;text-align:right;
+  }
+  .ce-embed__stat{display:flex;flex-direction:column;align-items:flex-end}
+  .ce-embed__stat-num{font-size:18px;font-weight:800;line-height:1}
+  .ce-embed__stat-lbl{font-size:9.5px;opacity:.7;margin-top:3px;text-transform:uppercase;letter-spacing:.6px}
+  .ce-embed__site{
+    font-size:9.5px;opacity:.55;margin-top:6px;text-transform:uppercase;letter-spacing:.6px;
+  }
+</style>
+</head>
+<body>
+<a href="<%= @profile_url %>" target="_blank" rel="noopener" class="ce-embed">
+  <img class="ce-embed__avatar" src="<%= @avatar %>" alt="<%= @display %>">
+  <div class="ce-embed__body">
+    <div class="ce-embed__name"><%= @display %></div>
+    <div class="ce-embed__sub">
+      <%= @tier.is_a?(Hash) ? (@tier[:name] || @tier['name']) : (@tier || 'Member') %>
+      ·
+      <%= @coin %> tier
+    </div>
+    <div class="ce-embed__site">Powered by <%= @site_host %></div>
+  </div>
+  <div class="ce-embed__stats">
+    <div class="ce-embed__stat">
+      <span class="ce-embed__stat-num"><%= number_with_delimiter(@score) %></span>
+      <span class="ce-embed__stat-lbl"><%= @coin %></span>
+    </div>
+    <% if @rank %>
+    <div class="ce-embed__stat">
+      <span class="ce-embed__stat-num">#<%= @rank %></span>
+      <span class="ce-embed__stat-lbl">Rank</span>
+    </div>
+    <% end %>
+  </div>
+</a>
+</body>
+</html>

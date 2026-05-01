@@ -3,7 +3,7 @@ en:
     coin_engine_enabled: |
       Master switch for the coin engine plugin. When false, all endpoints 404 and all jobs no-op.
 
-      <strong>📋 Manual Payments admin page</strong>: <a href="/coin-engine/admin">/coin-engine/admin</a> — full UI for issuing manual payments, viewing recent payments, and adding Solana transaction signatures after on-chain mint. Admin-only, gated by the same auth as this Settings page.
+      <strong>📋 Manual Payments admin page</strong>: <a href="/admin/coin-engine">/admin/coin-engine</a> — full UI for issuing manual payments, viewing recent payments, and adding Solana transaction signatures after on-chain mint. Admin-only, gated by the same auth as this Settings page.
     coin_engine_coin_name: "Display name for the community coin shown in widgets and emails. Default '$RENO'."
     coin_engine_coin_symbol: "Single-character symbol for the coin (e.g. '$', '⊙'). Default '$'."
     coin_engine_brand_color: "Hex color used as the brand accent in email templates. Default LF orange."
@@ -24,6 +24,20 @@ en:
     coin_engine_tier_up_email_enabled: "Send a real-time email when a user crosses a tier threshold."
     coin_engine_webhook_url: "Optional outbound webhook URL. Coin engine events POST here when this is set."
     coin_engine_webhook_events: "Comma-separated event types to post to the webhook. Options: tier_up, airdrop, milestone, weekly_digest_sent."
+    coin_engine_custom_titles: "Pipe-separated display titles, one per tier. Must match tier_thresholds length. Shown on public profile, user card, and embed badge."
+    coin_engine_public_profile_enabled: "Enable the SEO-rich public profile page at /coin-engine/u/:username. Indexable by search engines."
+    coin_engine_embed_badge_enabled: "Enable the embeddable tier badge at /coin-engine/embed/u/:username (HTML, SVG, JSON formats)."
+    coin_engine_streak_calendar_enabled: "Show the GitHub-style streak heatmap in the FAB Stats tab."
+    coin_engine_themed_week_name: "Currently active themed week display name (e.g. 'Kitchen Week'). Empty disables the themed-week banner."
+    coin_engine_themed_week_tagline: "Short tagline shown under the themed week name."
+    coin_engine_themed_week_hashtag: "Hashtag promoted with the themed week (e.g. 'KitchenWeek2026')."
+    coin_engine_themed_week_category_id: "Category ID that the themed-week multiplier applies to. 0 disables category targeting."
+    coin_engine_themed_week_multiplier: "Reward multiplier on actions in the themed category (e.g. 1.5 = 50% bonus)."
+    coin_engine_themed_week_ends_at: "ISO-8601 datetime when the themed week ends. Used for the live countdown."
+    coin_engine_goals_enabled: "Allow users to set personal monthly $RENO goals in the Stats tab."
+    coin_engine_max_monthly_goal: "Maximum allowed monthly goal a user can set. Prevents pathological values."
+    coin_engine_animated_ring_min_tier: "Minimum tier index (0-based) at which animated tier rings appear around avatars."
+    coin_engine_show_rank_in_user_card: "Show the user's overall rank in the popup user card."
 
   discourse_coin_engine:
     weekly_digest:

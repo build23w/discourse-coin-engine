@@ -143,7 +143,7 @@
 
   // ===== user search =====
   function searchUsers(q){
-    api('GET', '/coin-engine/admin/users/search.json?q=' + encodeURIComponent(q))
+    api('GET', '/admin/coin-engine/users/search.json?q=' + encodeURIComponent(q))
       .then(function(d){ renderResults(d.users || []); })
       .catch(function(e){ console.warn(e); });
   }
@@ -189,7 +189,7 @@
     refreshButtonState();
   }
   function showRecentForUser(uid){
-    api('GET', '/coin-engine/admin/users/' + uid + '/payments.json')
+    api('GET', '/admin/coin-engine/users/' + uid + '/payments.json')
       .then(function(d){
         var w = $('lf-cep-recent-warning');
         var recent = (d.payments || []).filter(function(p){
@@ -244,7 +244,7 @@
     var amount = parseInt($('lf-cep-amount').value, 10) || 0;
     var reason = $('lf-cep-reason').value.trim() || 'Manual payment';
     $('lf-cep-send-btn').disabled = true;
-    api('POST', '/coin-engine/admin/payments.json', {
+    api('POST', '/admin/coin-engine/payments.json', {
       user_id: selectedUser.id,
       amount:  amount,
       reason:  reason
@@ -272,7 +272,7 @@
 
   // ===== payments table =====
   function loadPayments(){
-    api('GET', '/coin-engine/admin/payments.json?limit=50')
+    api('GET', '/admin/coin-engine/payments.json?limit=50')
       .then(function(d){ renderPayments(d.payments || []); })
       .catch(function(e){
         $('lf-cep-payments-body').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#b32424;">Failed to load: ' + e.message + '</td></tr>';
@@ -310,7 +310,7 @@
         var pid = form.getAttribute('data-pid');
         var tx = form.querySelector('input').value.trim();
         if (!tx) return;
-        api('PUT', '/coin-engine/admin/payments/' + pid + '/tx.json', { tx_signature: tx })
+        api('PUT', '/admin/coin-engine/payments/' + pid + '/tx.json', { tx_signature: tx })
           .then(function(){ loadPayments(); })
           .catch(function(e){ alert('Failed: ' + e.message); });
       });

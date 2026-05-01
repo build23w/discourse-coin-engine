@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # name: discourse-coin-engine
-# about: Configurable community-coin gamification engine. Brandable coin/leaderboard widget pairing, weekly digest emails, streak nudges, dormant re-engagement, on-chain-ready payment ledger. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.4.4
+# about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
+# version: 0.6.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -30,7 +30,25 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/streak_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_airdrop_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_payments_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/embed_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/profile_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/insights_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/themed_week_controller.rb', __FILE__)
+  # v0.6.0 phase controllers
+  load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/identity_controller.rb',   __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/governance_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/surprise_controller.rb',   __FILE__)
+  # v0.6.0 models
   load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/tip.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/shop_item.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/bounty.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/squad.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/achievement.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/vote.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/daily_chest.rb', __FILE__)
 
   # v0.4.0: registers the sidebar link AND the modern plugin-show route. We ship
   # a connector at admin/assets/javascripts/discourse/connectors/admin-plugin-config-page-coin-engine/
@@ -47,6 +65,8 @@ after_initialize do
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_streak_warning.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_dormant_reengage.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_daily_top_picks.rb', __FILE__)
+  load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_random_airdrop.rb', __FILE__)
+  load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_spotlight_rotation.rb', __FILE__)
 
   load File.expand_path('../app/mailers/discourse_coin_engine_mailer.rb', __FILE__)
 
@@ -69,12 +89,19 @@ after_initialize do
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
 
     # ===== Admin UI for manual payments =====
-    # MUST live OUTSIDE /admin/plugins/* because Discourse's Ember plugin-show
-    # route owns that entire namespace under `use_new_show_route: true`. Routes
-    # registered via routes.append run AFTER Ember's catch-all -- so anything
-    # we put under /admin/plugins/discourse-coin-engine/* gets swallowed by
-    # Ember and 404s. Our own /coin-engine/admin/* namespace is conflict-free.
-    # Mods bookmark `/coin-engine/admin` -- that's the full payments UI.
+    # Under /admin/ so Admin::AdminController's session/CSRF/layout assumptions
+    # are satisfied, but NOT under /admin/plugins/ (which Discourse's Ember
+    # plugin-show route catches first under use_new_show_route: true).
+    # Mods bookmark /admin/coin-engine -- that's the full payments UI.
+    get  '/admin/coin-engine'                                        => 'discourse_coin_engine/admin_payments#index'
+    get  '/admin/coin-engine/embed'                                  => 'discourse_coin_engine/admin_payments#embed'
+    get  '/admin/coin-engine/payments.json'                          => 'discourse_coin_engine/admin_payments#list'
+    get  '/admin/coin-engine/users/search.json'                      => 'discourse_coin_engine/admin_payments#search_users'
+    get  '/admin/coin-engine/users/:id/payments.json'                => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
+    post '/admin/coin-engine/payments.json'                          => 'discourse_coin_engine/admin_payments#create'
+    put  '/admin/coin-engine/payments/:id/tx.json'                   => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
+
+    # Pre-v0.4.5 alias kept alive for any in-flight bookmarks
     get  '/coin-engine/admin'                                        => 'discourse_coin_engine/admin_payments#index'
     get  '/coin-engine/admin/embed'                                  => 'discourse_coin_engine/admin_payments#embed'
     get  '/coin-engine/admin/payments.json'                          => 'discourse_coin_engine/admin_payments#list'
@@ -85,6 +112,77 @@ after_initialize do
 
     # User-facing receipts (used by hrr-ux-pack to inject a "Recent receipts" card on profile pages)
     get  '/coin-engine/user/:username/payments.json'                 => 'discourse_coin_engine/user_recap#payments', constraints: { username: username_re }
+
+    # ===== v0.5.0: Embeddable tier badge (anonymous, iframe/img-friendly) =====
+    # /coin-engine/embed/u/:username        -> HTML for iframe drop-in
+    # /coin-engine/embed/u/:username.svg    -> SVG for <img> use (markdown, GitHub, etc.)
+    # /coin-engine/embed/u/:username.json   -> JSON for SPA consumption
+    get  '/coin-engine/embed/u/:username'                            => 'discourse_coin_engine/embed#show', constraints: { username: username_re }, defaults: { format: :html }
+    get  '/coin-engine/embed/u/:username.svg'                        => 'discourse_coin_engine/embed#show', constraints: { username: username_re }, defaults: { format: :svg }
+    get  '/coin-engine/embed/u/:username.json'                       => 'discourse_coin_engine/embed#show', constraints: { username: username_re }, defaults: { format: :json }
+
+    # ===== v0.5.0: Public profile showcase (SEO-rich, indexable) =====
+    get  '/coin-engine/u/:username'                                  => 'discourse_coin_engine/profile#show', constraints: { username: username_re }, defaults: { format: :html }
+    get  '/coin-engine/u/:username.json'                             => 'discourse_coin_engine/profile#show', constraints: { username: username_re }, defaults: { format: :json }
+
+    # ===== v0.5.0: Personal insights endpoint =====
+    get  '/coin-engine/insights/:username.json'                      => 'discourse_coin_engine/insights#show', constraints: { username: username_re }
+
+    # ===== v0.5.0: Themed week =====
+    get  '/coin-engine/themed-week.json'                             => 'discourse_coin_engine/themed_week#show'
+
+    # ===== v0.6.0 Phase 2: Economy (Tips, Shop, Bounties, Stakes) =====
+    post '/coin-engine/economy/tips.json'                            => 'discourse_coin_engine/economy#create_tip'
+    get  '/coin-engine/economy/tips/sent.json'                       => 'discourse_coin_engine/economy#list_sent_tips'
+    get  '/coin-engine/economy/tips/received.json'                   => 'discourse_coin_engine/economy#list_received_tips'
+    get  '/coin-engine/economy/shop.json'                            => 'discourse_coin_engine/economy#shop_index'
+    post '/coin-engine/economy/shop/:slug/redeem.json'               => 'discourse_coin_engine/economy#redeem_shop_item'
+    get  '/coin-engine/economy/redemptions.json'                     => 'discourse_coin_engine/economy#list_redemptions'
+    get  '/coin-engine/economy/bounties.json'                        => 'discourse_coin_engine/economy#list_bounties'
+    post '/coin-engine/economy/bounties.json'                        => 'discourse_coin_engine/economy#create_bounty'
+    post '/coin-engine/economy/bounties/:id/award.json'              => 'discourse_coin_engine/economy#award_bounty', constraints: { id: %r{\d+} }
+    get  '/coin-engine/economy/stakes.json'                          => 'discourse_coin_engine/economy#list_stakes'
+    post '/coin-engine/economy/stakes.json'                          => 'discourse_coin_engine/economy#create_stake'
+    post '/coin-engine/economy/stakes/:id/unstake.json'              => 'discourse_coin_engine/economy#unstake', constraints: { id: %r{\d+} }
+
+    # ===== v0.6.0 Phase 3: Social (Squads, Mentor, Spotlight) =====
+    get  '/coin-engine/social/squads.json'                           => 'discourse_coin_engine/social#list_squads'
+    get  '/coin-engine/social/squads/:slug.json'                     => 'discourse_coin_engine/social#show_squad'
+    post '/coin-engine/social/squads/:slug/join.json'                => 'discourse_coin_engine/social#join_squad'
+    post '/coin-engine/social/squads/leave.json'                     => 'discourse_coin_engine/social#leave_squad'
+    post '/coin-engine/social/mentorships.json'                      => 'discourse_coin_engine/social#create_mentorship'
+    post '/coin-engine/social/mentorships/:id/accept.json'           => 'discourse_coin_engine/social#accept_mentorship', constraints: { id: %r{\d+} }
+    get  '/coin-engine/social/spotlights.json'                       => 'discourse_coin_engine/social#list_spotlights'
+
+    # ===== v0.6.0 Phase 4: Identity (Achievements, Tournaments, AMA, Suggestions, Photo Bounties, Wrapped) =====
+    get  '/coin-engine/identity/u/:username/achievements.json'       => 'discourse_coin_engine/identity#list_user_achievements', constraints: { username: username_re }
+    get  '/coin-engine/identity/tournaments.json'                    => 'discourse_coin_engine/identity#list_tournaments'
+    get  '/coin-engine/identity/tournaments/:slug.json'              => 'discourse_coin_engine/identity#show_tournament'
+    post '/coin-engine/identity/tournaments/:slug/enter.json'        => 'discourse_coin_engine/identity#enter_tournament'
+    post '/coin-engine/identity/tournaments/:slug/vote.json'         => 'discourse_coin_engine/identity#vote_tournament'
+    get  '/coin-engine/identity/ama.json'                            => 'discourse_coin_engine/identity#list_ama_bookings'
+    post '/coin-engine/identity/ama.json'                            => 'discourse_coin_engine/identity#create_ama_booking'
+    get  '/coin-engine/identity/quest_suggestions.json'              => 'discourse_coin_engine/identity#list_quest_suggestions'
+    post '/coin-engine/identity/quest_suggestions.json'              => 'discourse_coin_engine/identity#create_quest_suggestion'
+    get  '/coin-engine/identity/photo_bounties.json'                 => 'discourse_coin_engine/identity#list_photo_bounties'
+    post '/coin-engine/identity/photo_bounties.json'                 => 'discourse_coin_engine/identity#create_photo_bounty'
+    get  '/coin-engine/identity/wrapped/:username.json'              => 'discourse_coin_engine/identity#show_wrapped', constraints: { username: username_re }
+
+    # ===== v0.6.0 Phase 5: Governance (Votes, Verified Pro) =====
+    get  '/coin-engine/governance/votes.json'                        => 'discourse_coin_engine/governance#list_votes'
+    get  '/coin-engine/governance/votes/:slug.json'                  => 'discourse_coin_engine/governance#show_vote'
+    post '/coin-engine/governance/votes/:slug/cast.json'             => 'discourse_coin_engine/governance#cast_vote'
+    post '/coin-engine/governance/verified_pro/apply.json'           => 'discourse_coin_engine/governance#apply_verified_pro'
+    get  '/coin-engine/governance/verified_pro/:username.json'       => 'discourse_coin_engine/governance#verified_pro_lookup', constraints: { username: username_re }
+    post '/coin-engine/governance/verified_pro/:user_id/decision.json' => 'discourse_coin_engine/governance#decide_verified_pro', constraints: { user_id: %r{\d+} }
+
+    # ===== v0.6.0 Phase 6: Surprise (Daily Chest, Streak Freeze, Auctions, Airdrops) =====
+    post '/coin-engine/surprise/chest/claim.json'                    => 'discourse_coin_engine/surprise#claim_chest'
+    post '/coin-engine/surprise/streak_freeze.json'                  => 'discourse_coin_engine/surprise#use_streak_freeze'
+    get  '/coin-engine/surprise/auctions.json'                       => 'discourse_coin_engine/surprise#list_auctions'
+    get  '/coin-engine/surprise/auctions/:slug.json'                 => 'discourse_coin_engine/surprise#show_auction'
+    post '/coin-engine/surprise/auctions/:slug/bid.json'             => 'discourse_coin_engine/surprise#bid_auction'
+    get  '/coin-engine/surprise/random_airdrops.json'                => 'discourse_coin_engine/surprise#list_random_airdrops'
   end
 
   # ===== Serializer enrichment =====
@@ -160,6 +258,39 @@ after_initialize do
     rescue StandardError
       nil
     end
+  end
+
+  # v0.5.0 — custom title from the coin_engine_custom_titles setting, mapped by score → tier index.
+  add_to_serializer(:current_user, :coin_engine_custom_title, include_condition: -> { SiteSetting.coin_engine_enabled }) do
+    next nil unless object && object.id && object.id > 0
+    begin
+      titles = SiteSetting.coin_engine_custom_titles.to_s.split('|').map(&:strip)
+      thresholds = SiteSetting.coin_engine_tier_thresholds.to_s.split('|').map(&:to_i)
+      next nil if titles.empty? || thresholds.empty?
+      score = Rails.cache.fetch("coin_engine_score_user_#{object.id}", expires_in: 5.minutes) do
+        ::DiscourseCoinEngine.coin_user_total(object.id)
+      end
+      idx = thresholds.rindex { |t| score >= t } || 0
+      titles[idx]
+    rescue StandardError
+      nil
+    end
+  end
+
+  # v0.5.0 — Themed-week summary (site-wide, but cheap to ride along).
+  add_to_serializer(:site, :coin_engine_themed_week, include_condition: -> { SiteSetting.coin_engine_enabled }) do
+    name = SiteSetting.coin_engine_themed_week_name.to_s
+    next nil if name.blank?
+    {
+      name: name,
+      tagline: SiteSetting.coin_engine_themed_week_tagline.to_s,
+      hashtag: SiteSetting.coin_engine_themed_week_hashtag.to_s,
+      category_id: SiteSetting.coin_engine_themed_week_category_id.to_i,
+      multiplier: SiteSetting.coin_engine_themed_week_multiplier.to_f,
+      ends_at: SiteSetting.coin_engine_themed_week_ends_at.to_s,
+    }
+  rescue StandardError
+    nil
   end
 
   add_to_serializer(:topic_list_item, :coin_engine_image_url, include_condition: -> { SiteSetting.coin_engine_enabled }) do

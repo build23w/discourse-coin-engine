@@ -1,0 +1,184 @@
+<% content_for :head do %>
+<title><%= @display %> — <%= @coin %> profile on <%= @site_name %></title>
+<meta name="description" content="<%= @display %>'s public profile on <%= @site_name %>: <%= @score %> <%= @coin %> earned, rank #<%= @rank || '—' %>, <%= @tier.is_a?(Hash) ? (@tier[:name] || @tier['name']) : @tier %> tier. Top renovation contributions and reviews.">
+<link rel="canonical" href="https://<%= @site_host %>/coin-engine/u/<%= @username %>">
+<meta property="og:type" content="profile">
+<meta property="og:title" content="<%= @display %> on <%= @site_name %>">
+<meta property="og:description" content="<%= @score %> <%= @coin %> earned · rank #<%= @rank || '—' %> · <%= @tier.is_a?(Hash) ? (@tier[:name] || @tier['name']) : @tier %> tier">
+<meta property="og:image" content="<%= @avatar %>">
+<meta property="og:url" content="https://<%= @site_host %>/coin-engine/u/<%= @username %>">
+<meta property="profile:username" content="<%= @username %>">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": <%= @display.to_json.html_safe %>,
+  "alternateName": <%= @username.to_json.html_safe %>,
+  "url": <%= "https://#{@site_host}/coin-engine/u/#{@username}".to_json.html_safe %>,
+  "image": <%= @avatar.to_json.html_safe %>,
+  "description": <%= @bio.to_json.html_safe %>,
+  "address": <%= (@location.present? ? { "@type" => "PostalAddress", "addressLocality" => @location } : nil).to_json.html_safe %>
+}
+</script>
+<style>
+  body{margin:0;background:#f6f7fb;color:#0f1624;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .ce-prof-wrap{max-width:980px;margin:0 auto;padding:32px 20px 80px}
+  .ce-prof-hero{position:relative;overflow:hidden;border-radius:24px;background:linear-gradient(135deg,<%= @brand %> 0%,#0f1624 100%);color:#fff;padding:32px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;box-shadow:0 16px 40px rgba(15,22,36,.18)}
+  .ce-prof-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(800px 300px at 80% -20%, rgba(255,255,255,.18), transparent 70%);pointer-events:none}
+  .ce-prof-avatar{width:120px;height:120px;border-radius:50%;border:4px solid rgba(255,255,255,.5);object-fit:cover;flex:0 0 auto;background:#0f1624;position:relative;z-index:1}
+  .ce-prof-id{flex:1;min-width:240px;position:relative;z-index:1}
+  .ce-prof-display{font-size:30px;font-weight:900;line-height:1.1;margin:0}
+  .ce-prof-username{font-size:14px;opacity:.75;margin-top:4px}
+  .ce-prof-customtitle{display:inline-block;margin-top:10px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,.18);font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
+  .ce-prof-meta{margin-top:14px;display:flex;flex-wrap:wrap;gap:14px;font-size:13px;opacity:.85}
+  .ce-prof-meta span{display:inline-flex;align-items:center;gap:6px}
+  .ce-prof-stats{display:flex;gap:16px;flex:0 0 auto;flex-wrap:wrap;position:relative;z-index:1}
+  .ce-prof-stat{background:rgba(255,255,255,.12);backdrop-filter:blur(8px);border-radius:14px;padding:14px 18px;min-width:110px;text-align:center}
+  .ce-prof-stat-num{font-size:24px;font-weight:900;line-height:1}
+  .ce-prof-stat-lbl{font-size:10px;opacity:.7;margin-top:5px;text-transform:uppercase;letter-spacing:.6px}
+
+  .ce-prof-grid{margin-top:28px;display:grid;grid-template-columns:1fr;gap:20px}
+  @media(min-width:760px){.ce-prof-grid{grid-template-columns:2fr 1fr}}
+
+  .ce-prof-card{background:#fff;border-radius:18px;padding:22px;box-shadow:0 4px 14px rgba(15,22,36,.06)}
+  .ce-prof-card h2{margin:0 0 14px;font-size:16px;font-weight:800;letter-spacing:.2px}
+  .ce-topic-list,.ce-post-list{list-style:none;padding:0;margin:0}
+  .ce-topic-list li,.ce-post-list li{padding:12px 0;border-bottom:1px solid rgba(15,22,36,.06)}
+  .ce-topic-list li:last-child,.ce-post-list li:last-child{border-bottom:none}
+  .ce-topic-list a,.ce-post-list a{color:#0f1624;text-decoration:none;font-weight:700;font-size:14.5px;line-height:1.35}
+  .ce-topic-list a:hover,.ce-post-list a:hover{color:<%= @brand %>}
+  .ce-topic-meta,.ce-post-meta{font-size:11.5px;color:#6b7280;margin-top:4px;display:flex;gap:14px;flex-wrap:wrap}
+  .ce-post-excerpt{font-size:13px;color:#4a5260;line-height:1.5;margin-top:6px}
+
+  .ce-badge-list{display:flex;flex-wrap:wrap;gap:10px;list-style:none;padding:0;margin:0}
+  .ce-badge-list li{padding:6px 12px;border-radius:999px;background:#f0f2f7;font-size:12px;font-weight:700;color:#3a4252}
+
+  .ce-share{margin-top:24px;background:#fff;border-radius:18px;padding:20px;box-shadow:0 4px 14px rgba(15,22,36,.06)}
+  .ce-share h3{margin:0 0 10px;font-size:14px;font-weight:800}
+  .ce-share-row{display:flex;flex-wrap:wrap;gap:8px}
+  .ce-share-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background:<%= @brand %>;color:#fff;font-size:12.5px;font-weight:700;text-decoration:none}
+  .ce-share-btn.alt{background:#0f1624}
+  .ce-share-code{margin-top:14px;background:#0f1624;color:#cbd5e1;border-radius:12px;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
+
+  .ce-prof-bio{font-size:14px;line-height:1.6;color:#3a4252}
+  .ce-prof-empty{font-size:13px;color:#6b7280;font-style:italic;padding:8px 0}
+
+  .ce-prof-foot{margin-top:32px;text-align:center;font-size:12px;color:#6b7280}
+  .ce-prof-foot a{color:<%= @brand %>;text-decoration:none;font-weight:700}
+</style>
+<% end %>
+
+<div class="ce-prof-wrap">
+  <header class="ce-prof-hero">
+    <img src="<%= @avatar %>" alt="<%= @display %>" class="ce-prof-avatar">
+    <div class="ce-prof-id">
+      <h1 class="ce-prof-display"><%= @display %></h1>
+      <div class="ce-prof-username">@<%= @username %></div>
+      <% if @custom_title.present? %>
+        <span class="ce-prof-customtitle"><%= @custom_title %></span>
+      <% end %>
+      <div class="ce-prof-meta">
+        <% if @location.present? %><span>📍 <%= @location %></span><% end %>
+        <% if @website.present? %><span>🔗 <a href="<%= @website %>" rel="nofollow noopener" style="color:inherit">website</a></span><% end %>
+        <span>📅 Joined <%= @created_at.strftime('%b %Y') %></span>
+        <% if @streak && @streak.to_i > 0 %><span>🔥 <%= @streak %>-day streak</span><% end %>
+      </div>
+    </div>
+    <div class="ce-prof-stats">
+      <div class="ce-prof-stat">
+        <div class="ce-prof-stat-num"><%= number_with_delimiter(@score) %></div>
+        <div class="ce-prof-stat-lbl"><%= @coin %></div>
+      </div>
+      <% if @rank %>
+      <div class="ce-prof-stat">
+        <div class="ce-prof-stat-num">#<%= @rank %></div>
+        <div class="ce-prof-stat-lbl">Rank</div>
+      </div>
+      <% end %>
+      <% if @tier %>
+      <div class="ce-prof-stat">
+        <div class="ce-prof-stat-num"><%= @tier.is_a?(Hash) ? (@tier[:name] || @tier['name']) : @tier %></div>
+        <div class="ce-prof-stat-lbl">Tier</div>
+      </div>
+      <% end %>
+    </div>
+  </header>
+
+  <div class="ce-prof-grid">
+    <main>
+      <% if @bio.present? %>
+        <section class="ce-prof-card">
+          <h2>About</h2>
+          <p class="ce-prof-bio"><%= @bio.html_safe %></p>
+        </section>
+      <% end %>
+
+      <section class="ce-prof-card" style="margin-top:20px">
+        <h2>Top contributions</h2>
+        <% if @top_topics.any? %>
+          <ul class="ce-topic-list">
+            <% @top_topics.each do |t| %>
+              <li>
+                <a href="https://<%= @site_host %>/t/<%= t['slug'] %>/<%= t['id'] %>" target="_blank" rel="noopener"><%= t['title'] %></a>
+                <div class="ce-topic-meta">
+                  <span>💬 <%= t['posts_count'] %> replies</span>
+                  <span>❤️ <%= t['like_count'] %> likes</span>
+                  <span>👁️ <%= number_with_delimiter(t['views'] || 0) %> views</span>
+                </div>
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <div class="ce-prof-empty">No topics yet. <%= @display %> is just getting started.</div>
+        <% end %>
+      </section>
+
+      <section class="ce-prof-card" style="margin-top:20px">
+        <h2>Recent activity</h2>
+        <% if @recent_posts.any? %>
+          <ul class="ce-post-list">
+            <% @recent_posts.each do |p| %>
+              <li>
+                <a href="https://<%= @site_host %>/t/<%= p['slug'] %>/<%= p['topic_id'] %>/<%= p['post_number'] %>" target="_blank" rel="noopener"><%= p['title'] %></a>
+                <div class="ce-post-meta"><span><%= p['created_at'].respond_to?(:strftime) ? p['created_at'].strftime('%b %-d, %Y') : p['created_at'] %></span></div>
+                <div class="ce-post-excerpt"><%= sanitize(p['excerpt'].to_s, tags: %w[b i em strong]) %>…</div>
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <div class="ce-prof-empty">No recent posts.</div>
+        <% end %>
+      </section>
+    </main>
+
+    <aside>
+      <section class="ce-prof-card">
+        <h2>Badges</h2>
+        <% if @badges.any? %>
+          <ul class="ce-badge-list">
+            <% @badges.each do |b| %>
+              <li><%= b['name'] %></li>
+            <% end %>
+          </ul>
+        <% else %>
+          <div class="ce-prof-empty">No badges yet.</div>
+        <% end %>
+      </section>
+
+      <section class="ce-share">
+        <h3>Embed this badge</h3>
+        <p style="font-size:12px;color:#6b7280;margin:0 0 10px">Drop this anywhere — works on any site, blog, or signature.</p>
+        <div class="ce-share-row">
+          <a href="https://twitter.com/intent/tweet?text=<%= ERB::Util.url_encode("Check out my profile on #{@site_name}") %>&url=<%= ERB::Util.url_encode("https://#{@site_host}/coin-engine/u/#{@username}") %>" target="_blank" rel="noopener" class="ce-share-btn">Share on X</a>
+          <a href="https://www.linkedin.com/sharing/share-offsite/?url=<%= ERB::Util.url_encode("https://#{@site_host}/coin-engine/u/#{@username}") %>" target="_blank" rel="noopener" class="ce-share-btn alt">LinkedIn</a>
+        </div>
+        <div class="ce-share-code"><iframe src="https://<%= @site_host %>/coin-engine/embed/u/<%= @username %>" width="540" height="100" frameborder="0" scrolling="no" style="border:0"></iframe></div>
+      </section>
+    </aside>
+  </div>
+
+  <footer class="ce-prof-foot">
+    <%= @site_name %> · <a href="https://<%= @site_host %>/u/<%= @username %>">View full Discourse profile →</a>
+  </footer>
+</div>
