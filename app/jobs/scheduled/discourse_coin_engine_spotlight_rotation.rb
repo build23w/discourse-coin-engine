@@ -35,7 +35,7 @@ module ::Jobs
 
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
           'ce_spotlight_reward', [user_id, Date.today, reward]
         )
         ::DiscourseCoinEngine::Spotlight.create!(

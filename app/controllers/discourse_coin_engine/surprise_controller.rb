@@ -22,7 +22,7 @@ module DiscourseCoinEngine
         end
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
           'ce_chest_credit', [current_user.id, today, reward]
         )
         DailyChest.create!(
@@ -53,7 +53,7 @@ module DiscourseCoinEngine
       f = nil
       ActiveRecord::Base.transaction do
         ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3)",
+          "INSERT INTO gamification_scores (user_id, date, score, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())",
           'ce_freeze_charge', [current_user.id, Date.today, -cost]
         )
         f = StreakFreeze.create!(user_id: current_user.id, freeze_date: d, cost_paid: cost)
