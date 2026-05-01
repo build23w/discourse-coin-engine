@@ -321,7 +321,6 @@ after_initialize do
       # Reserved for tier-up email trigger.
     end
   end
-  end
 
   # ===== v0.6.3 -- surface exceptions from phase controllers as JSON =====
   [
