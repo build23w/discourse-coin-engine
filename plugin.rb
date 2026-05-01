@@ -186,18 +186,7 @@ after_initialize do
   end
 
   # ===== Serializer enrichment =====
-  # The whole point of this section: make the front-end component zero-fetch.
-  # Discourse server-renders `data-preloaded` on every page load; if we enrich
-  # the currentUser and topic_list serializers, the component reads everything
-  # from that one HTML payload and never needs a second request -- so it's
-  # immune to WAF rate-limiting that currently 403s our /leaderboard/1.json
-  # and /latest.json XHRs.
-
-  # Use raw SQL for the gamification table. The plugin's model class is namespaced
-  # as `DiscourseGamification::GamificationScore` on some installs; looking up a
-  # bare `::GamificationScore` raises NameError. Raw SQL bypasses the constant
-  # entirely and returns the real number (the serializer was returning 0 because
-  # the rescue was catching that NameError silently).
+  # Use raw SQL for the gamification table (avoids ::GamificationScore namespace issues).
   ::DiscourseCoinEngine.define_singleton_method(:coin_user_total) do |user_id|
     next 0 unless user_id && user_id > 0
     begin
@@ -260,7 +249,7 @@ after_initialize do
     end
   end
 
-  # v0.5.0 — custom title from the coin_engine_custom_titles setting, mapped by score → tier index.
+  # v0.5.0 — custom title from coin_engine_custom_titles setting, mapped by score → tier index.
   add_to_serializer(:current_user, :coin_engine_custom_title, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     next nil unless object && object.id && object.id > 0
     begin
@@ -277,7 +266,7 @@ after_initialize do
     end
   end
 
-  # v0.5.0 — Themed-week summary (site-wide, but cheap to ride along).
+  # v0.5.0 — Themed-week summary (site-wide).
   add_to_serializer(:site, :coin_engine_themed_week, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     name = SiteSetting.coin_engine_themed_week_name.to_s
     next nil if name.blank?
