@@ -6,6 +6,10 @@ module DiscourseCoinEngine
   class EconomyController < ::ApplicationController
     requires_login except: [:shop_index]
 
+    # Surface real exceptions to the client as JSON so we don't lose them in a
+    # generic 500. Lets the FAB toast show the actual error class + message
+    # instead of the user having to grep production.log.
+
     # ===== Tips =====
     # POST /coin-engine/economy/tips.json { recipient_username, amount, post_id?, note? }
     def create_tip

@@ -5,6 +5,7 @@ module DiscourseCoinEngine
   class SocialController < ::ApplicationController
     requires_login except: [:list_squads, :show_squad]
 
+
     # GET /coin-engine/social/squads.json
     def list_squads
       squads = Squad.enabled.order(total_score: :desc, member_count: :desc).limit(50)

@@ -5,6 +5,7 @@ module DiscourseCoinEngine
   class SurpriseController < ::ApplicationController
     requires_login except: [:list_auctions, :show_auction]
 
+
     # ===== Daily Chest =====
     # POST /coin-engine/surprise/chest/claim.json
     # Variable-reward draw. 1/day per user.

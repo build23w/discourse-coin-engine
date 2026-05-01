@@ -5,6 +5,7 @@ module DiscourseCoinEngine
   class IdentityController < ::ApplicationController
     requires_login except: [:list_tournaments, :show_tournament, :show_wrapped, :list_user_achievements]
 
+
     # ===== Achievements =====
     # GET /coin-engine/identity/u/:username/achievements.json
     def list_user_achievements

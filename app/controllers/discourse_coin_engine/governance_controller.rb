@@ -5,6 +5,7 @@ module DiscourseCoinEngine
   class GovernanceController < ::ApplicationController
     requires_login except: [:list_votes, :show_vote, :verified_pro_lookup]
 
+
     # GET /coin-engine/governance/votes.json
     def list_votes
       vs = Vote.where(status: %w[open closed]).order(starts_at: :desc).limit(20)
