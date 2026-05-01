@@ -280,5 +280,88 @@ module DiscourseCoinEngine
         skip_validations: true
       )
     end
+    # GET /admin/coin-engine/stats.json - aggregate counts for the dashboard banner
+    def stats
+      total_distributed = ::DiscourseCoinEngine::Payment.where(status: 'sent').sum(:amount).to_i rescue 0
+      payments_today    = ::DiscourseCoinEngine::Payment.where('created_at >= ?', Date.today.beginning_of_day).count rescue 0
+      payments_week     = ::DiscourseCoinEngine::Payment.where('created_at >= ?', 7.days.ago).count rescue 0
+      unique_users_paid = ::DiscourseCoinEngine::Payment.distinct.count(:user_id) rescue 0
+      pending_mints     = ::DiscourseCoinEngine::Payment.where(tx_signature: nil).where(status: 'sent').count rescue 0
+      render json: {
+        total_distributed: total_distributed,
+        payments_today: payments_today,
+        payments_week: payments_week,
+        unique_users_paid: unique_users_paid,
+        pending_mints: pending_mints,
+      }
+    rescue StandardError => e
+      render json: { errors: [e.message] }, status: 500
+    end
+
+    # GET /admin/coin-engine/users.json - paginated all-user browser with search + sort
+    def list_all_users
+      page     = (params[:page] || 1).to_i.clamp(1, 1000)
+      per_page = (params[:per_page] || 25).to_i.clamp(1, 100)
+      q        = params[:q].to_s.strip.downcase
+      sort     = params[:sort].to_s
+
+      order_by = case sort
+                 when 'score_asc'    then 'score_total ASC NULLS LAST'
+                 when 'created_desc' then 'u.created_at DESC'
+                 when 'created_asc'  then 'u.created_at ASC'
+                 when 'paid_desc'    then 'lifetime_received DESC NULLS LAST'
+                 when 'paid_recent'  then 'last_paid_at DESC NULLS LAST'
+                 else                     'score_total DESC NULLS LAST'
+                 end
+
+      where = "u.id > 0 AND u.staged = false AND u.suspended_till IS NULL"
+      if q.length >= 1
+        where += " AND (LOWER(u.username) LIKE :q OR LOWER(u.name) LIKE :q OR LOWER(u.email) LIKE :q)"
+      end
+
+      wallet_field_id = (SiteSetting.coin_engine_solana_field_id rescue 1).to_i
+
+      sql = <<~SQL
+        WITH score_per_user AS (
+          SELECT user_id, SUM(score)::int AS score_total
+          FROM gamification_scores GROUP BY user_id
+        ),
+        paid_per_user AS (
+          SELECT user_id, SUM(amount)::int AS lifetime_received, MAX(sent_at) AS last_paid_at
+          FROM coin_engine_payments WHERE status = 'sent' GROUP BY user_id
+        )
+        SELECT u.id, u.username, u.name, u.email, u.trust_level, u.created_at,
+               COALESCE(s.score_total, 0) AS score_total,
+               COALESCE(p.lifetime_received, 0) AS lifetime_received,
+               p.last_paid_at,
+               uf.value AS wallet
+        FROM users u
+        LEFT JOIN score_per_user s ON s.user_id = u.id
+        LEFT JOIN paid_per_user p  ON p.user_id = u.id
+        LEFT JOIN user_custom_fields uf ON uf.user_id = u.id AND uf.name = :wallet_key
+        WHERE #{where}
+        ORDER BY #{order_by}
+        LIMIT :limit OFFSET :offset
+      SQL
+
+      bind = { q: "%#{q}%", limit: per_page, offset: (page - 1) * per_page, wallet_key: "user_field_#{wallet_field_id}" }
+      rows = ActiveRecord::Base.connection.exec_query(ActiveRecord::Base.send(:sanitize_sql_for_conditions, [sql, bind])).to_a
+      total = ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.send(:sanitize_sql_for_conditions,
+          ["SELECT COUNT(*) AS c FROM users u WHERE #{where}", bind])
+      ).rows.first&.first.to_i
+
+      render json: {
+        users: rows.map { |r| {
+          id: r['id'], username: r['username'], name: r['name'], email: r['email'],
+          trust_level: r['trust_level'], score: r['score_total'],
+          lifetime_received: r['lifetime_received'], last_paid_at: r['last_paid_at'],
+          wallet: r['wallet'],
+        }},
+        total: total, page: page, per_page: per_page,
+      }
+    rescue StandardError => e
+      render json: { errors: [e.message] }, status: 500
+    end
   end
 end

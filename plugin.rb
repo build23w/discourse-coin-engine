@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.6.10
+# version: 0.7.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -131,6 +131,10 @@ after_initialize do
     post '/admin/coin-engine/payments.json'                          => 'discourse_coin_engine/admin_payments#create'
     put  '/admin/coin-engine/payments/:id/tx.json'                   => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
 
+    # v0.7.0: stats banner + paginated all-user browser
+    get  '/admin/coin-engine/stats.json'                             => 'discourse_coin_engine/admin_payments#stats'
+    get  '/admin/coin-engine/users.json'                             => 'discourse_coin_engine/admin_payments#list_all_users'
+
     # Pre-v0.4.5 alias kept alive for any in-flight bookmarks
     get  '/coin-engine/admin'                                        => 'discourse_coin_engine/admin_payments#index'
     get  '/coin-engine/admin/embed'                                  => 'discourse_coin_engine/admin_payments#embed'
@@ -139,6 +143,10 @@ after_initialize do
     get  '/coin-engine/admin/users/:id/payments.json'                => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
     post '/coin-engine/admin/payments.json'                          => 'discourse_coin_engine/admin_payments#create'
     put  '/coin-engine/admin/payments/:id/tx.json'                   => 'discourse_coin_engine/admin_payments#update_tx_signature', constraints: { id: %r{\d+} }
+
+    # v0.7.0 legacy alias
+    get  '/coin-engine/admin/stats.json'                             => 'discourse_coin_engine/admin_payments#stats'
+    get  '/coin-engine/admin/users.json'                             => 'discourse_coin_engine/admin_payments#list_all_users'
 
     # User-facing receipts (used by hrr-ux-pack to inject a "Recent receipts" card on profile pages)
     get  '/coin-engine/user/:username/payments.json'                 => 'discourse_coin_engine/user_recap#payments', constraints: { username: username_re }

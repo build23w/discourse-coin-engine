@@ -1,321 +1,415 @@
-<% content_for :title do %>Coin Engine -- Manual Payments<% end %>
-
+<%# v0.7.0 — Comprehensive admin payments console.
+    Self-contained: inline CSS + JS so it renders cleanly inside the no_ember layout.
+    Endpoints used:
+      GET  /admin/coin-engine/stats.json                  -- aggregate counts/totals
+      GET  /admin/coin-engine/payments.json?page=N        -- recent payments paginated
+      GET  /admin/coin-engine/users.json?page=N&q=...     -- all-user browser paginated
+      GET  /admin/coin-engine/users/search.json?q=...     -- typeahead user search
+      GET  /admin/coin-engine/users/:id/payments.json     -- per-user history
+      POST /admin/coin-engine/payments.json               -- create payment
+      PUT  /admin/coin-engine/payments/:id/tx.json        -- attach Solana tx signature
+%>
 <style>
-  .lf-cep-wrap { max-width: 1080px; margin: 24px auto; padding: 0 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .lf-cep-wrap h1 { font-size: 24px; font-weight: 800; margin: 0 0 6px; color: #1a2332; }
-  .lf-cep-wrap p.lead { color: #5a6573; font-size: 14px; margin: 0 0 22px; }
-  .lf-cep-card { background: #fff; border: 1px solid rgba(15,22,36,.1); border-radius: 12px; padding: 20px 22px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(15,22,36,.05); }
-  .lf-cep-card h2 { font-size: 15px; font-weight: 800; color: #ff6b35; letter-spacing: .8px; text-transform: uppercase; margin: 0 0 14px; }
-  .lf-cep-row { display: grid; grid-template-columns: 180px 1fr; gap: 14px 16px; align-items: center; margin-bottom: 12px; }
-  .lf-cep-row label { font-size: 13px; font-weight: 700; color: #1a2332; }
-  .lf-cep-row input[type="text"], .lf-cep-row input[type="number"], .lf-cep-row textarea {
-    width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(15,22,36,.14); font-size: 14px; box-sizing: border-box;
-    transition: border-color .15s, box-shadow .15s;
-  }
-  .lf-cep-row input:focus, .lf-cep-row textarea:focus { outline: 0; border-color: #ff6b35; box-shadow: 0 0 0 3px rgba(255,107,53,.15); }
-  .lf-cep-user-pick { position: relative; }
-  .lf-cep-user-results {
-    position: absolute; top: 100%; left: 0; right: 0; max-height: 240px; overflow: auto;
-    background: #fff; border: 1px solid rgba(15,22,36,.14); border-radius: 8px;
-    box-shadow: 0 8px 28px rgba(15,22,36,.14); margin-top: 4px; z-index: 10;
-  }
-  .lf-cep-user-result { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; }
-  .lf-cep-user-result:hover, .lf-cep-user-result.is-active { background: #fff3eb; }
-  .lf-cep-user-result img { width: 28px; height: 28px; border-radius: 50%; }
-  .lf-cep-user-result strong { font-size: 13.5px; color: #1a2332; }
-  .lf-cep-user-result span { font-size: 12px; color: #8b95a3; }
-  .lf-cep-selected { display: inline-flex; align-items: center; gap: 8px; background: #fff3eb; border: 1px solid rgba(255,107,53,.3); border-radius: 999px; padding: 6px 12px 6px 6px; font-weight: 700; }
-  .lf-cep-selected img { width: 24px; height: 24px; border-radius: 50%; }
-  .lf-cep-selected button { background: transparent; border: 0; color: #d9551f; font-size: 16px; cursor: pointer; padding: 0 4px; }
-  .lf-cep-actions { display: flex; gap: 10px; margin-top: 18px; }
-  .lf-cep-btn { background: #ff6b35; color: #fff; border: 0; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: background .15s; }
-  .lf-cep-btn:hover { background: #d9551f; }
-  .lf-cep-btn[disabled] { opacity: .5; cursor: not-allowed; }
-  .lf-cep-btn--ghost { background: transparent; color: #5a6573; border: 1px solid rgba(15,22,36,.14); }
-  .lf-cep-btn--ghost:hover { background: #f7f9fc; color: #1a2332; }
-  .lf-cep-confirm { background: #fff3eb; border: 1px solid rgba(255,107,53,.3); padding: 14px 18px; border-radius: 10px; }
-  .lf-cep-confirm strong { color: #d9551f; font-weight: 800; }
-  .lf-cep-status { font-size: 13px; padding: 10px 14px; border-radius: 8px; margin-top: 14px; }
-  .lf-cep-status--ok  { background: #e8f8eb; color: #2a7d39; border: 1px solid #b0e3b9; }
-  .lf-cep-status--err { background: #fce8e8; color: #b32424; border: 1px solid #f4c0c0; }
-  .lf-cep-table { width: 100%; border-collapse: collapse; }
-  .lf-cep-table th, .lf-cep-table td { padding: 10px 12px; border-bottom: 1px solid #eef1f6; text-align: left; font-size: 13px; }
-  .lf-cep-table th { color: #8b95a3; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
-  .lf-cep-table td .amt { font-weight: 800; color: #d9551f; }
-  .lf-cep-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-  .lf-cep-pill--approved { background: #fff3eb; color: #d9551f; }
-  .lf-cep-pill--on_chain { background: #e8f8eb; color: #2a7d39; }
-  .lf-cep-recent-warning { background: #fff8d6; border: 1px solid #f0d878; padding: 10px 14px; border-radius: 8px; margin-top: 10px; font-size: 13px; color: #856200; }
-  .lf-cep-tx-form { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
-  .lf-cep-tx-form input { flex: 1; padding: 6px 10px; font-size: 12.5px; border-radius: 6px; border: 1px solid rgba(15,22,36,.14); font-family: ui-monospace, monospace; }
-  .lf-cep-tx-form button { padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 0; background: #1a2332; color: #fff; cursor: pointer; }
-  .lf-cep-tx-link { font-family: ui-monospace, monospace; font-size: 11.5px; color: #2a7d39; text-decoration: none; }
-  .lf-cep-tx-link:hover { text-decoration: underline; }
+  .ce-admin{max-width:1200px;margin:24px auto;padding:0 20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;color:#0f1624;-webkit-font-smoothing:antialiased}
+  .ce-admin a{color:#d9551f;text-decoration:none;font-weight:600}
+  .ce-admin a:hover{text-decoration:underline}
+  .ce-admin h1{font-size:24px;font-weight:900;margin:0 0 4px}
+  .ce-admin h2{font-size:15px;font-weight:800;margin:0 0 12px;letter-spacing:.2px;text-transform:uppercase;color:#5a6573}
+  .ce-admin .ce-sub{color:#5a6573;font-size:13.5px;margin:0 0 24px;line-height:1.5}
+  .ce-admin .ce-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+  @media(max-width:760px){.ce-admin .ce-stats{grid-template-columns:repeat(2,1fr)}}
+  .ce-stat{background:linear-gradient(135deg,#fff,#f7f9fc);border:1px solid rgba(15,22,36,.08);border-radius:14px;padding:16px}
+  .ce-stat-num{font-size:24px;font-weight:900;line-height:1}
+  .ce-stat-lbl{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#5a6573;margin-top:6px}
+  .ce-stat-trend{font-size:11px;color:#0f1624;margin-top:4px;opacity:.7}
+  .ce-tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid rgba(15,22,36,.08);padding-bottom:0;flex-wrap:wrap}
+  .ce-tab{padding:10px 16px;background:transparent;border:none;color:#5a6573;font-weight:700;font-size:13.5px;cursor:pointer;border-radius:8px 8px 0 0;border-bottom:3px solid transparent;margin-bottom:-1px}
+  .ce-tab:hover{background:#f7f9fc;color:#0f1624}
+  .ce-tab.is-active{background:#fff;color:#d9551f;border-bottom-color:#ff6b35}
+  .ce-tab .ce-badge{display:inline-block;background:#ff6b35;color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;margin-left:6px;vertical-align:1px}
+  .ce-panel{background:#fff;border:1px solid rgba(15,22,36,.08);border-radius:0 14px 14px 14px;padding:20px;min-height:300px}
+  .ce-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .ce-row label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#5a6573;margin-bottom:6px}
+  .ce-row .ce-fld{flex:1;min-width:200px}
+  .ce-input,.ce-select,.ce-textarea{width:100%;padding:10px 12px;border:1px solid rgba(15,22,36,.15);border-radius:10px;background:#fff;font-size:13.5px;box-sizing:border-box;font-family:inherit}
+  .ce-input:focus,.ce-select:focus,.ce-textarea:focus{outline:2px solid #ff6b35;outline-offset:1px;border-color:transparent}
+  .ce-textarea{min-height:80px;resize:vertical}
+  .ce-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:10px;border:1px solid rgba(15,22,36,.12);background:#fff;color:#0f1624;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s}
+  .ce-btn:hover{background:#f7f9fc}
+  .ce-btn.ce-btn-primary{background:#ff6b35;color:#fff;border-color:transparent}
+  .ce-btn.ce-btn-primary:hover{background:#d9551f}
+  .ce-btn.ce-btn-danger{background:#fff;color:#c53030;border-color:rgba(197,48,48,.3)}
+  .ce-btn:disabled{opacity:.5;cursor:not-allowed}
+  .ce-table{width:100%;border-collapse:collapse;font-size:13px}
+  .ce-table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#5a6573;padding:8px 12px;border-bottom:1px solid rgba(15,22,36,.1);font-weight:700}
+  .ce-table td{padding:10px 12px;border-bottom:1px solid rgba(15,22,36,.06)}
+  .ce-table tr:hover{background:#fcfdff}
+  .ce-table .ce-num{text-align:right;font-variant-numeric:tabular-nums}
+  .ce-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.3px}
+  .ce-pill-sent{background:rgba(76,184,134,.15);color:#1f7a52}
+  .ce-pill-pending{background:rgba(255,165,0,.15);color:#9a5b00}
+  .ce-pill-mint{background:rgba(118,75,200,.15);color:#5a3a99}
+  .ce-pill-tx{background:rgba(15,22,36,.08);color:#0f1624;font-family:ui-monospace,Menlo,monospace;font-size:10.5px}
+  .ce-search{position:relative}
+  .ce-typeahead{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid rgba(15,22,36,.12);border-radius:10px;margin-top:4px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(15,22,36,.1);z-index:100;display:none}
+  .ce-typeahead.is-open{display:block}
+  .ce-ta-row{padding:9px 12px;cursor:pointer;font-size:13.5px;border-bottom:1px solid rgba(15,22,36,.05)}
+  .ce-ta-row:hover,.ce-ta-row.is-focus{background:#fff3eb}
+  .ce-ta-row strong{color:#0f1624}
+  .ce-ta-row .ce-ta-meta{font-size:11.5px;color:#5a6573;margin-top:2px}
+  .ce-pgn{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-size:12.5px;color:#5a6573}
+  .ce-pgn .ce-pgn-btns{display:flex;gap:6px}
+  .ce-pgn-btn{padding:6px 12px;border:1px solid rgba(15,22,36,.12);background:#fff;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:700;color:#0f1624}
+  .ce-pgn-btn:disabled{opacity:.4;cursor:not-allowed}
+  .ce-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .ce-empty{text-align:center;padding:40px 20px;color:#8b95a3;font-size:13px;font-style:italic}
+  .ce-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:999px;background:#0f1624;color:#fff;font-size:13px;font-weight:700;z-index:9999;box-shadow:0 12px 30px rgba(15,22,36,.25);transition:opacity .25s ease}
+  .ce-toast.ce-toast-err{background:#c53030}
+  .ce-toast.ce-toast-win{background:#1f7a52}
+  .ce-toast.ce-toast-out{opacity:0}
+  .ce-mint-row{padding:14px;background:rgba(118,75,200,.05);border:1px solid rgba(118,75,200,.15);border-radius:12px;margin-bottom:8px}
+  .ce-mint-row.ce-mint-done{opacity:.55}
+  .ce-mint-meta{font-size:12.5px;color:#5a6573;margin-bottom:8px}
+  .ce-mint-input{display:flex;gap:8px;align-items:flex-start}
+  .ce-mint-input input{flex:1;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .ce-form-help{font-size:11.5px;color:#8b95a3;margin-top:4px}
 </style>
 
-<div class="lf-cep-wrap">
-  <h1>Manual <%= SiteSetting.coin_engine_coin_name %> Payments</h1>
-  <p class="lead">Search a user, set an amount, review, send. Each payment credits the user, appends to the public ledger, emails the recipient, and creates a permanent receipt PM.</p>
+<div class="ce-admin">
+  <h1>$RENO Manual Payments</h1>
+  <p class="ce-sub">Issue manual payments, browse the user base, track recent activity, and add Solana transaction signatures after on-chain mint. Admin-only.</p>
 
-  <div class="lf-cep-card" id="lf-cep-form-card">
-    <h2>Issue a payment</h2>
+  <!-- Stats banner -->
+  <section class="ce-stats" id="ce-stats-row">
+    <div class="ce-stat"><div class="ce-stat-num" id="ce-stat-total">—</div><div class="ce-stat-lbl">Total $RENO issued</div><div class="ce-stat-trend" id="ce-stat-total-trend"></div></div>
+    <div class="ce-stat"><div class="ce-stat-num" id="ce-stat-payments-week">—</div><div class="ce-stat-lbl">Payments this week</div><div class="ce-stat-trend" id="ce-stat-week-trend"></div></div>
+    <div class="ce-stat"><div class="ce-stat-num" id="ce-stat-users-paid">—</div><div class="ce-stat-lbl">Unique users paid</div></div>
+    <div class="ce-stat"><div class="ce-stat-num" id="ce-stat-pending-mints">—</div><div class="ce-stat-lbl">Pending Solana mints</div></div>
+  </section>
 
-    <div class="lf-cep-row">
-      <label>Recipient</label>
-      <div id="lf-cep-user-area" class="lf-cep-user-pick">
-        <input type="text" id="lf-cep-user-search" placeholder="Type a username..." autocomplete="off">
+  <!-- Tabs -->
+  <nav class="ce-tabs" id="ce-tabs">
+    <button class="ce-tab is-active" data-tab="pay">💸 Pay User</button>
+    <button class="ce-tab" data-tab="recent">📒 Recent Payments</button>
+    <button class="ce-tab" data-tab="users">👥 All Users</button>
+    <button class="ce-tab" data-tab="mints">⛓️ Pending Mints <span class="ce-badge" id="ce-mint-badge" hidden></span></button>
+  </nav>
+
+  <!-- Panels -->
+  <div class="ce-panel" id="ce-pane-pay">
+    <h2>Issue a manual payment</h2>
+    <div class="ce-row">
+      <div class="ce-fld" style="flex:2;min-width:280px">
+        <label>Recipient</label>
+        <div class="ce-search">
+          <input type="text" class="ce-input" id="ce-pay-q" placeholder="Type a username (e.g. buildersltd)" autocomplete="off">
+          <div class="ce-typeahead" id="ce-pay-ta"></div>
+        </div>
+        <div class="ce-form-help" id="ce-pay-selected" hidden></div>
+      </div>
+      <div class="ce-fld" style="max-width:160px">
+        <label>Amount ($RENO)</label>
+        <input type="number" class="ce-input" id="ce-pay-amt" min="1" step="1" placeholder="500">
       </div>
     </div>
-
-    <div class="lf-cep-row">
-      <label>Amount (<%= SiteSetting.coin_engine_coin_name %>)</label>
-      <input type="number" id="lf-cep-amount" placeholder="e.g. 250" min="1" max="1000000">
+    <div class="ce-row">
+      <div class="ce-fld">
+        <label>Reason</label>
+        <select class="ce-select" id="ce-pay-reason">
+          <option value="manual">Manual payment</option>
+          <option value="airdrop">Airdrop</option>
+          <option value="contest_winner">Contest winner</option>
+          <option value="featured_review">Featured review</option>
+          <option value="quality_post">Quality post bonus</option>
+          <option value="bug_bounty">Bug bounty</option>
+          <option value="referral">Referral reward</option>
+          <option value="event_attendance">Event attendance</option>
+          <option value="other">Other (see note)</option>
+        </select>
+      </div>
+      <div class="ce-fld" style="flex:2">
+        <label>Note (visible to recipient)</label>
+        <input type="text" class="ce-input" id="ce-pay-note" maxlength="280" placeholder="Optional explanation">
+      </div>
     </div>
-
-    <div class="lf-cep-row">
-      <label>Reason</label>
-      <input type="text" id="lf-cep-reason" placeholder="Contest winner, reno-of-the-month, manual correction, etc." maxlength="500">
+    <div class="ce-row">
+      <div class="ce-fld">
+        <label>Solana wallet override (optional)</label>
+        <input type="text" class="ce-input" id="ce-pay-wallet" placeholder="Leave blank to use recipient's linked wallet" style="font-family:ui-monospace,Menlo,monospace;font-size:12px">
+        <div class="ce-form-help">Only fill this if you want to mint to a specific wallet other than the recipient's linked one.</div>
+      </div>
     </div>
-
-    <div id="lf-cep-recent-warning" class="lf-cep-recent-warning" style="display:none;"></div>
-
-    <div class="lf-cep-actions">
-      <button class="lf-cep-btn" id="lf-cep-review-btn" disabled>Review &amp; send</button>
+    <div class="ce-toolbar" style="justify-content:flex-end;margin-top:16px">
+      <button class="ce-btn ce-btn-primary" id="ce-pay-submit">Send payment</button>
     </div>
-
-    <div id="lf-cep-status"></div>
   </div>
 
-  <div class="lf-cep-card" id="lf-cep-confirm-card" style="display:none;">
-    <h2>Confirm</h2>
-    <div class="lf-cep-confirm" id="lf-cep-confirm-body"></div>
-    <div class="lf-cep-actions">
-      <button class="lf-cep-btn" id="lf-cep-send-btn">Approve &amp; send</button>
-      <button class="lf-cep-btn lf-cep-btn--ghost" id="lf-cep-cancel-btn">Cancel</button>
-    </div>
-  </div>
-
-  <div class="lf-cep-card">
+  <div class="ce-panel" id="ce-pane-recent" hidden>
     <h2>Recent payments</h2>
-    <table class="lf-cep-table">
-      <thead>
-        <tr>
-          <th>When</th><th>To</th><th>Amount</th><th>Reason</th><th>Status</th><th>By</th><th>Tx signature</th>
-        </tr>
-      </thead>
-      <tbody id="lf-cep-payments-body">
-        <tr><td colspan="7" style="text-align:center;color:#8b95a3;">Loading...</td></tr>
-      </tbody>
+    <div class="ce-toolbar">
+      <input type="text" class="ce-input" id="ce-recent-filter" placeholder="Filter by username or reason..." style="max-width:300px">
+      <span style="flex:1"></span>
+      <select class="ce-select" id="ce-recent-status" style="max-width:160px">
+        <option value="">All status</option>
+        <option value="sent">Sent</option>
+        <option value="pending_mint">Pending mint</option>
+        <option value="minted">Minted</option>
+      </select>
+    </div>
+    <table class="ce-table" id="ce-recent-table">
+      <thead><tr><th>When</th><th>Recipient</th><th class="ce-num">Amount</th><th>Reason</th><th>Status</th><th>Tx signature</th></tr></thead>
+      <tbody id="ce-recent-body"><tr><td colspan="6" class="ce-empty">Loading...</td></tr></tbody>
     </table>
+    <div class="ce-pgn">
+      <span id="ce-recent-info">—</span>
+      <div class="ce-pgn-btns">
+        <button class="ce-pgn-btn" id="ce-recent-prev" disabled>← Prev</button>
+        <button class="ce-pgn-btn" id="ce-recent-next" disabled>Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ce-panel" id="ce-pane-users" hidden>
+    <h2>All users</h2>
+    <div class="ce-toolbar">
+      <input type="text" class="ce-input" id="ce-users-q" placeholder="Search users by name, username, or email..." style="max-width:340px">
+      <select class="ce-select" id="ce-users-sort" style="max-width:200px">
+        <option value="score_desc">Highest $RENO first</option>
+        <option value="score_asc">Lowest $RENO first</option>
+        <option value="created_desc">Newest accounts</option>
+        <option value="created_asc">Oldest accounts</option>
+        <option value="paid_desc">Most paid out (lifetime)</option>
+        <option value="paid_recent">Last paid recently</option>
+      </select>
+    </div>
+    <table class="ce-table" id="ce-users-table">
+      <thead><tr><th>User</th><th class="ce-num">$RENO score</th><th class="ce-num">Lifetime received</th><th>Last paid</th><th>Wallet</th><th></th></tr></thead>
+      <tbody id="ce-users-body"><tr><td colspan="6" class="ce-empty">Loading...</td></tr></tbody>
+    </table>
+    <div class="ce-pgn">
+      <span id="ce-users-info">—</span>
+      <div class="ce-pgn-btns">
+        <button class="ce-pgn-btn" id="ce-users-prev" disabled>← Prev</button>
+        <button class="ce-pgn-btn" id="ce-users-next" disabled>Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ce-panel" id="ce-pane-mints" hidden>
+    <h2>Pending Solana mints</h2>
+    <p class="ce-sub">Payments that haven't yet been minted on-chain. Paste the Solana transaction signature once the mint completes to mark the payment as fully settled.</p>
+    <div id="ce-mints-body"><div class="ce-empty">Loading...</div></div>
   </div>
 </div>
 
 <script>
 (function(){
-  var COIN = <%= SiteSetting.coin_engine_coin_name.to_json.html_safe %>;
-  var CSRF = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : null;
-  var selectedUser = null;
-  var debounceTimer = null;
+  if (window.__lfCEAdminLoaded) return; window.__lfCEAdminLoaded = true;
 
-  function $(id){ return document.getElementById(id); }
-  function api(method, url, body){
-    var opts = { method: method, credentials: 'same-origin', headers: { 'Accept':'application/json' } };
-    if (body !== undefined){
-      opts.headers['Content-Type'] = 'application/json';
-      opts.body = JSON.stringify(body);
-    }
-    if (CSRF) opts.headers['X-CSRF-Token'] = CSRF;
-    return fetch(url, opts).then(function(r){
-      if (!r.ok) return r.text().then(function(t){ throw new Error(r.status + ': ' + t); });
-      return r.json();
-    });
-  }
-  function fmtDate(iso){
-    if (!iso) return '';
-    var d = new Date(iso);
-    return d.toLocaleString();
-  }
-  function status(msg, ok){
-    var el = $('lf-cep-status');
-    el.className = 'lf-cep-status lf-cep-status--' + (ok ? 'ok' : 'err');
-    el.textContent = msg;
+  // ---------- Helpers ----------
+  function $(sel, root){ return (root||document).querySelector(sel); }
+  function $$(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, function(c){ return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]; }); }
+  function fmtN(n){ return Number(n||0).toLocaleString(); }
+  function fmtRel(d){ if (!d) return '—'; var t = new Date(d).getTime(); var s = (Date.now()-t)/1000; if (s<60) return Math.round(s)+'s ago'; if (s<3600) return Math.round(s/60)+'m ago'; if (s<86400) return Math.round(s/3600)+'h ago'; var days = Math.round(s/86400); if (days<60) return days+'d ago'; return new Date(t).toLocaleDateString(); }
+  function fmtFull(d){ if (!d) return '—'; var t = new Date(d); return t.toLocaleString(); }
+  function csrf(){ var m = document.querySelector('meta[name="csrf-token"]'); return m ? m.getAttribute('content') : ''; }
+  function get(url){ return fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } }).then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); }); }
+  function post(url, body){ return fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() }, body: JSON.stringify(body || {}) }).then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); }); }
+  function put(url, body){ return fetch(url, { method: 'PUT', credentials: 'same-origin', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() }, body: JSON.stringify(body || {}) }).then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); }); }
+  function toast(msg, kind){ var t = document.createElement('div'); t.className = 'ce-toast' + (kind ? ' ce-toast-' + kind : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(function(){ t.classList.add('ce-toast-out'); }, 2500); setTimeout(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, 3000); }
+
+  // ---------- Stats banner ----------
+  function loadStats(){
+    get('/admin/coin-engine/stats.json').then(function(s){
+      $('#ce-stat-total').textContent = fmtN(s.total_distributed || 0);
+      $('#ce-stat-payments-week').textContent = fmtN(s.payments_week || 0);
+      $('#ce-stat-users-paid').textContent = fmtN(s.unique_users_paid || 0);
+      $('#ce-stat-pending-mints').textContent = fmtN(s.pending_mints || 0);
+      if (s.payments_today) { $('#ce-stat-week-trend').textContent = '+' + s.payments_today + ' today'; }
+      if (s.pending_mints && s.pending_mints > 0){ var b = $('#ce-mint-badge'); b.hidden = false; b.textContent = s.pending_mints; }
+    }).catch(function(){ /* stats endpoint optional */ });
   }
 
-  // ===== user search =====
-  function searchUsers(q){
-    api('GET', '/admin/coin-engine/users/search.json?q=' + encodeURIComponent(q))
-      .then(function(d){ renderResults(d.users || []); })
-      .catch(function(e){ console.warn(e); });
-  }
-  function renderResults(users){
-    var area = $('lf-cep-user-area');
-    var existing = area.querySelector('.lf-cep-user-results');
-    if (existing) existing.remove();
-    if (!users.length) return;
-    var box = document.createElement('div');
-    box.className = 'lf-cep-user-results';
-    users.forEach(function(u){
-      var row = document.createElement('div');
-      row.className = 'lf-cep-user-result';
-      var avatarUrl = u.avatar_template ? u.avatar_template.replace('{size}', '40') : '';
-      row.innerHTML = (avatarUrl ? '<img src="' + avatarUrl + '" alt="">' : '<span style="width:28px"></span>')
-                    + '<strong>@' + u.username + '</strong>'
-                    + (u.name ? '<span>' + u.name + '</span>' : '');
-      row.addEventListener('click', function(){ pickUser(u); });
-      box.appendChild(row);
+  // ---------- Tabs ----------
+  $$('.ce-tab').forEach(function(b){
+    b.addEventListener('click', function(){
+      $$('.ce-tab').forEach(function(x){ x.classList.remove('is-active'); });
+      b.classList.add('is-active');
+      var k = b.getAttribute('data-tab');
+      ['pay','recent','users','mints'].forEach(function(t){
+        $('#ce-pane-' + t).hidden = (t !== k);
+      });
+      if (k === 'recent' && !state.recentLoaded) loadRecent();
+      if (k === 'users'  && !state.usersLoaded)  loadUsers();
+      if (k === 'mints'  && !state.mintsLoaded)  loadMints();
     });
-    area.appendChild(box);
-  }
-  function pickUser(u){
-    selectedUser = u;
-    var area = $('lf-cep-user-area');
-    area.querySelectorAll('.lf-cep-user-results').forEach(function(el){ el.remove(); });
-    var avatarUrl = u.avatar_template ? u.avatar_template.replace('{size}', '40') : '';
-    area.innerHTML = '<div class="lf-cep-selected">'
-                   + (avatarUrl ? '<img src="' + avatarUrl + '" alt="">' : '')
-                   + '<span>@' + u.username + '</span>'
-                   + '<button type="button" id="lf-cep-clear-user">x</button>'
-                   + '</div>';
-    document.getElementById('lf-cep-clear-user').addEventListener('click', clearUser);
-    refreshButtonState();
-    showRecentForUser(u.id);
-  }
-  function clearUser(){
-    selectedUser = null;
-    var area = $('lf-cep-user-area');
-    area.innerHTML = '<input type="text" id="lf-cep-user-search" placeholder="Type a username..." autocomplete="off">';
-    bindSearch();
-    $('lf-cep-recent-warning').style.display = 'none';
-    refreshButtonState();
-  }
-  function showRecentForUser(uid){
-    api('GET', '/admin/coin-engine/users/' + uid + '/payments.json')
-      .then(function(d){
-        var w = $('lf-cep-recent-warning');
-        var recent = (d.payments || []).filter(function(p){
-          return new Date(p.created_at) > new Date(Date.now() - 7*86400*1000);
+  });
+
+  var state = { selectedUser: null, recentPage: 1, usersPage: 1, recentLoaded: false, usersLoaded: false, mintsLoaded: false };
+
+  // ---------- Pay tab: typeahead ----------
+  var payQ = $('#ce-pay-q'), payTA = $('#ce-pay-ta'), payTimer = null;
+  payQ.addEventListener('input', function(){
+    clearTimeout(payTimer);
+    var q = payQ.value.trim();
+    if (q.length < 2){ payTA.classList.remove('is-open'); payTA.innerHTML = ''; return; }
+    payTimer = setTimeout(function(){
+      get('/admin/coin-engine/users/search.json?q=' + encodeURIComponent(q)).then(function(d){
+        var rows = (d.users || []).map(function(u){
+          return '<div class="ce-ta-row" data-uid="' + u.id + '" data-uname="' + esc(u.username) + '" data-wallet="' + esc(u.wallet || '') + '"><strong>' + esc(u.username) + '</strong>' + (u.name ? ' <span style="color:#5a6573">— ' + esc(u.name) + '</span>' : '') + '<div class="ce-ta-meta">' + (u.email ? esc(u.email) + ' · ' : '') + 'TL' + (u.trust_level || 0) + ' · ' + fmtN(u.score || 0) + ' $RENO' + (u.wallet ? ' · 🔗 wallet linked' : '') + '</div></div>';
+        }).join('');
+        payTA.innerHTML = rows || '<div class="ce-ta-row" style="cursor:default;color:#8b95a3">No matches</div>';
+        payTA.classList.add('is-open');
+        $$('.ce-ta-row[data-uid]', payTA).forEach(function(r){
+          r.addEventListener('click', function(){
+            state.selectedUser = { id: r.getAttribute('data-uid'), username: r.getAttribute('data-uname'), wallet: r.getAttribute('data-wallet') };
+            payQ.value = state.selectedUser.username;
+            payTA.classList.remove('is-open');
+            var sel = $('#ce-pay-selected'); sel.hidden = false; sel.innerHTML = '✓ Selected: <strong>@' + esc(state.selectedUser.username) + '</strong>' + (state.selectedUser.wallet ? ' (wallet: ' + esc(state.selectedUser.wallet.slice(0,6) + '...' + state.selectedUser.wallet.slice(-4)) + ')' : ' (no wallet linked)');
+          });
         });
-        if (!recent.length){ w.style.display = 'none'; return; }
-        var total = recent.reduce(function(s, p){ return s + p.amount; }, 0);
-        w.style.display = 'block';
-        w.innerHTML = '⚠ This user received <strong>' + recent.length + ' payment(s) totalling ' + total + ' ' + COIN + '</strong> in the last 7 days. Double-check before sending another.';
-      })
-      .catch(function(){});
-  }
-  function bindSearch(){
-    var input = document.getElementById('lf-cep-user-search');
-    if (!input) return;
-    input.addEventListener('input', function(e){
-      clearTimeout(debounceTimer);
-      var q = e.target.value;
-      if (q.length < 2){
-        var existing = $('lf-cep-user-area').querySelector('.lf-cep-user-results');
-        if (existing) existing.remove();
-        return;
-      }
-      debounceTimer = setTimeout(function(){ searchUsers(q); }, 200);
-    });
-  }
-  bindSearch();
-
-  function refreshButtonState(){
-    var amount = parseInt($('lf-cep-amount').value, 10) || 0;
-    $('lf-cep-review-btn').disabled = !(selectedUser && amount > 0);
-  }
-  $('lf-cep-amount').addEventListener('input', refreshButtonState);
-  $('lf-cep-reason').addEventListener('input', refreshButtonState);
-
-  // ===== review + send =====
-  $('lf-cep-review-btn').addEventListener('click', function(){
-    var amount = parseInt($('lf-cep-amount').value, 10) || 0;
-    var reason = $('lf-cep-reason').value.trim() || 'Manual payment';
-    $('lf-cep-confirm-body').innerHTML =
-      'Issue <strong>+' + amount + ' ' + COIN + '</strong> to <strong>@' + selectedUser.username + '</strong> for: ' +
-      '<em>"' + reason + '"</em>?<br><br>This will credit the user, append to the public ledger, send them an email and a receipt PM. Cannot be undone via UI; manual reversal would need a separate corrective payment.';
-    $('lf-cep-confirm-card').style.display = 'block';
-    $('lf-cep-confirm-card').scrollIntoView({behavior: 'smooth'});
+      });
+    }, 220);
   });
+  document.addEventListener('click', function(e){ if (!payQ.contains(e.target) && !payTA.contains(e.target)) payTA.classList.remove('is-open'); });
 
-  $('lf-cep-cancel-btn').addEventListener('click', function(){
-    $('lf-cep-confirm-card').style.display = 'none';
-  });
-
-  $('lf-cep-send-btn').addEventListener('click', function(){
-    var amount = parseInt($('lf-cep-amount').value, 10) || 0;
-    var reason = $('lf-cep-reason').value.trim() || 'Manual payment';
-    $('lf-cep-send-btn').disabled = true;
-    api('POST', '/admin/coin-engine/payments.json', {
-      user_id: selectedUser.id,
-      amount:  amount,
-      reason:  reason
+  $('#ce-pay-submit').addEventListener('click', function(){
+    if (!state.selectedUser){ toast('Select a recipient first', 'err'); return; }
+    var amt = parseInt($('#ce-pay-amt').value, 10) || 0;
+    if (amt <= 0){ toast('Amount must be positive', 'err'); return; }
+    var btn = $('#ce-pay-submit'); btn.disabled = true; btn.textContent = 'Sending...';
+    post('/admin/coin-engine/payments.json', {
+      user_id: state.selectedUser.id,
+      amount: amt,
+      reason: $('#ce-pay-reason').value,
+      note: $('#ce-pay-note').value,
+      wallet_address: $('#ce-pay-wallet').value.trim() || null,
     }).then(function(d){
-      var p = d.payment;
-      var r = d.results || {};
-      var summary = 'Payment #' + p.id + ' issued: ' +
-        (r.score_credited ? '✓ score credited' : '✗ score NOT credited') + ', ' +
-        (r.ledger_appended ? '✓ ledger appended' : '✗ ledger skipped') + ', ' +
-        (r.email_sent ? '✓ email sent' : '- email skipped') + ', ' +
-        (r.receipt_pm_created ? '✓ receipt PM' : '- receipt PM skipped');
-      status(summary, true);
-      // Reset form
-      $('lf-cep-amount').value = '';
-      $('lf-cep-reason').value = '';
-      clearUser();
-      $('lf-cep-confirm-card').style.display = 'none';
-      $('lf-cep-send-btn').disabled = false;
-      loadPayments();
-    }).catch(function(e){
-      status('Error: ' + e.message, false);
-      $('lf-cep-send-btn').disabled = false;
+      toast('Payment sent: +' + amt + ' $RENO to @' + state.selectedUser.username, 'win');
+      $('#ce-pay-amt').value = ''; $('#ce-pay-note').value = ''; $('#ce-pay-wallet').value = '';
+      $('#ce-pay-q').value = ''; $('#ce-pay-selected').hidden = true; state.selectedUser = null;
+      state.recentLoaded = false; state.mintsLoaded = false;  // force-refresh
+      loadStats();
+    }).catch(function(err){
+      toast((err && err.errors && err.errors[0]) || 'Payment failed', 'err');
+    }).finally(function(){
+      btn.disabled = false; btn.textContent = 'Send payment';
     });
   });
 
-  // ===== payments table =====
-  function loadPayments(){
-    api('GET', '/admin/coin-engine/payments.json?limit=50')
-      .then(function(d){ renderPayments(d.payments || []); })
-      .catch(function(e){
-        $('lf-cep-payments-body').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#b32424;">Failed to load: ' + e.message + '</td></tr>';
-      });
-  }
-  function renderPayments(list){
-    var body = $('lf-cep-payments-body');
-    if (!list.length){
-      body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#8b95a3;">No payments yet.</td></tr>';
-      return;
-    }
-    body.innerHTML = list.map(function(p){
-      var statusClass = p.status === 'on_chain' ? 'on_chain' : 'approved';
-      var txCell;
-      if (p.tx_signature){
-        txCell = '<a class="lf-cep-tx-link" href="https://solscan.io/tx/' + encodeURIComponent(p.tx_signature) + '" target="_blank" rel="noopener">' + p.tx_signature.substring(0,10) + '...</a>';
-      } else {
-        txCell = '<form class="lf-cep-tx-form" data-pid="' + p.id + '">'
-               + '<input type="text" placeholder="Solana tx signature" maxlength="200">'
-               + '<button type="submit">Add</button></form>';
+  // ---------- Recent tab ----------
+  function loadRecent(){
+    state.recentLoaded = true;
+    var page = state.recentPage;
+    get('/admin/coin-engine/payments.json?page=' + page + '&per_page=25').then(function(d){
+      var rows = (d.payments || []);
+      var body = $('#ce-recent-body');
+      if (!rows.length){ body.innerHTML = '<tr><td colspan="6" class="ce-empty">No payments yet on this page.</td></tr>'; }
+      else {
+        body.innerHTML = rows.map(function(p){
+          var status = p.tx_signature ? '<span class="ce-pill ce-pill-mint">Minted</span>' : '<span class="ce-pill ce-pill-sent">Sent</span>';
+          var tx = p.tx_signature ? '<span class="ce-pill ce-pill-tx" title="' + esc(p.tx_signature) + '">' + esc(p.tx_signature.slice(0,8)) + '…' + esc(p.tx_signature.slice(-4)) + '</span>' : '<em style="color:#8b95a3">—</em>';
+          return '<tr><td>' + fmtRel(p.sent_at || p.created_at) + '<div style="font-size:11px;color:#8b95a3">' + fmtFull(p.sent_at || p.created_at) + '</div></td>'
+            + '<td><a href="/u/' + esc(p.username || '') + '" target="_blank">@' + esc(p.username || '?') + '</a></td>'
+            + '<td class="ce-num"><strong>' + fmtN(p.amount) + '</strong></td>'
+            + '<td>' + esc(p.reason || '—') + (p.note ? '<div style="font-size:11px;color:#8b95a3;margin-top:2px">' + esc(p.note) + '</div>' : '') + '</td>'
+            + '<td>' + status + '</td>'
+            + '<td>' + tx + '</td></tr>';
+        }).join('');
       }
-      return '<tr>'
-           + '<td>' + fmtDate(p.created_at) + '</td>'
-           + '<td>@' + (p.username || '?') + '</td>'
-           + '<td><span class="amt">+' + p.amount + ' ' + COIN + '</span></td>'
-           + '<td>' + (p.reason || '') + '</td>'
-           + '<td><span class="lf-cep-pill lf-cep-pill--' + statusClass + '">' + p.status + '</span></td>'
-           + '<td>@' + (p.issued_by || 'system') + '</td>'
-           + '<td>' + txCell + '</td>'
-           + '</tr>';
-    }).join('');
-    body.querySelectorAll('.lf-cep-tx-form').forEach(function(form){
-      form.addEventListener('submit', function(e){
-        e.preventDefault();
-        var pid = form.getAttribute('data-pid');
-        var tx = form.querySelector('input').value.trim();
-        if (!tx) return;
-        api('PUT', '/admin/coin-engine/payments/' + pid + '/tx.json', { tx_signature: tx })
-          .then(function(){ loadPayments(); })
-          .catch(function(e){ alert('Failed: ' + e.message); });
-      });
+      $('#ce-recent-info').textContent = 'Page ' + page + (d.total ? ' · ' + d.total + ' total' : '');
+      $('#ce-recent-prev').disabled = page <= 1;
+      $('#ce-recent-next').disabled = rows.length < 25;
+    }).catch(function(){
+      $('#ce-recent-body').innerHTML = '<tr><td colspan="6" class="ce-empty">Failed to load. Retry.</td></tr>';
     });
   }
-  loadPayments();
+  $('#ce-recent-prev').addEventListener('click', function(){ if (state.recentPage > 1){ state.recentPage--; loadRecent(); }});
+  $('#ce-recent-next').addEventListener('click', function(){ state.recentPage++; loadRecent(); });
+
+  // ---------- Users tab ----------
+  function loadUsers(){
+    state.usersLoaded = true;
+    var page = state.usersPage;
+    var q = $('#ce-users-q').value.trim();
+    var sort = $('#ce-users-sort').value;
+    get('/admin/coin-engine/users.json?page=' + page + '&per_page=25&q=' + encodeURIComponent(q) + '&sort=' + encodeURIComponent(sort)).then(function(d){
+      var rows = (d.users || []);
+      var body = $('#ce-users-body');
+      if (!rows.length){ body.innerHTML = '<tr><td colspan="6" class="ce-empty">No users match.</td></tr>'; }
+      else {
+        body.innerHTML = rows.map(function(u){
+          var wallet = u.wallet ? '<span class="ce-pill ce-pill-tx" title="' + esc(u.wallet) + '">' + esc(u.wallet.slice(0,6) + '…' + u.wallet.slice(-4)) + '</span>' : '<em style="color:#8b95a3">none</em>';
+          return '<tr><td><a href="/u/' + esc(u.username) + '" target="_blank">@' + esc(u.username) + '</a>' + (u.name ? '<div style="font-size:11px;color:#8b95a3">' + esc(u.name) + '</div>' : '') + '</td>'
+            + '<td class="ce-num"><strong>' + fmtN(u.score) + '</strong></td>'
+            + '<td class="ce-num">' + fmtN(u.lifetime_received) + '</td>'
+            + '<td>' + (u.last_paid_at ? fmtRel(u.last_paid_at) : '<em style="color:#8b95a3">never</em>') + '</td>'
+            + '<td>' + wallet + '</td>'
+            + '<td><button class="ce-btn" data-payu="' + u.id + '" data-payname="' + esc(u.username) + '">Pay →</button></td></tr>';
+        }).join('');
+        $$('button[data-payu]', body).forEach(function(b){
+          b.addEventListener('click', function(){
+            state.selectedUser = { id: b.getAttribute('data-payu'), username: b.getAttribute('data-payname'), wallet: '' };
+            $('#ce-pay-q').value = state.selectedUser.username;
+            $('#ce-pay-selected').hidden = false; $('#ce-pay-selected').innerHTML = '✓ Selected: <strong>@' + esc(state.selectedUser.username) + '</strong>';
+            $$('.ce-tab[data-tab="pay"]')[0].click();
+            $('#ce-pay-amt').focus();
+          });
+        });
+      }
+      $('#ce-users-info').textContent = 'Page ' + page + (d.total ? ' · ' + d.total + ' users' : '');
+      $('#ce-users-prev').disabled = page <= 1;
+      $('#ce-users-next').disabled = rows.length < 25;
+    }).catch(function(){
+      $('#ce-users-body').innerHTML = '<tr><td colspan="6" class="ce-empty">Failed to load. Retry.</td></tr>';
+    });
+  }
+  var usersTimer = null;
+  $('#ce-users-q').addEventListener('input', function(){ clearTimeout(usersTimer); usersTimer = setTimeout(function(){ state.usersPage = 1; loadUsers(); }, 250); });
+  $('#ce-users-sort').addEventListener('change', function(){ state.usersPage = 1; loadUsers(); });
+  $('#ce-users-prev').addEventListener('click', function(){ if (state.usersPage > 1){ state.usersPage--; loadUsers(); }});
+  $('#ce-users-next').addEventListener('click', function(){ state.usersPage++; loadUsers(); });
+
+  // ---------- Mints tab ----------
+  function loadMints(){
+    state.mintsLoaded = true;
+    get('/admin/coin-engine/payments.json?per_page=100&pending_mint=1').then(function(d){
+      var rows = (d.payments || []).filter(function(p){ return !p.tx_signature; });
+      var body = $('#ce-mints-body');
+      if (!rows.length){ body.innerHTML = '<div class="ce-empty">All payments are minted. Nothing pending.</div>'; return; }
+      body.innerHTML = rows.map(function(p){
+        return '<div class="ce-mint-row" data-pid="' + p.id + '">'
+          + '<div class="ce-mint-meta"><strong>+' + fmtN(p.amount) + ' $RENO</strong> to <a href="/u/' + esc(p.username || '') + '" target="_blank">@' + esc(p.username || '?') + '</a> · ' + fmtRel(p.sent_at || p.created_at) + ' · reason: ' + esc(p.reason || '—') + '</div>'
+          + '<div class="ce-mint-input"><input type="text" class="ce-input" placeholder="Paste Solana transaction signature (base58)" data-pid="' + p.id + '"><button class="ce-btn ce-btn-primary" data-mintp="' + p.id + '">Mark minted</button></div>'
+          + '</div>';
+      }).join('');
+      $$('button[data-mintp]', body).forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var pid = btn.getAttribute('data-mintp');
+          var input = body.querySelector('input[data-pid="' + pid + '"]');
+          var sig = (input && input.value || '').trim();
+          if (!sig){ toast('Paste the Solana tx signature first', 'err'); return; }
+          btn.disabled = true; btn.textContent = 'Saving...';
+          put('/admin/coin-engine/payments/' + pid + '/tx.json', { tx_signature: sig }).then(function(){
+            toast('Marked as minted', 'win');
+            var row = body.querySelector('.ce-mint-row[data-pid="' + pid + '"]');
+            if (row){ row.classList.add('ce-mint-done'); btn.textContent = '✓ Done'; input.disabled = true; }
+            loadStats();
+            state.recentLoaded = false;
+          }).catch(function(err){
+            toast((err && err.errors && err.errors[0]) || 'Failed to save tx', 'err');
+            btn.disabled = false; btn.textContent = 'Mark minted';
+          });
+        });
+      });
+    }).catch(function(){
+      $('#ce-mints-body').innerHTML = '<div class="ce-empty">Failed to load pending mints.</div>';
+    });
+  }
+
+  // Boot
+  loadStats();
+  setInterval(loadStats, 60000); // refresh stats every minute
 })();
 </script>
