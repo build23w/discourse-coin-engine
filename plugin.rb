@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.6.2
+# version: 0.6.3
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -293,6 +293,33 @@ after_initialize do
   if defined?(DiscourseEvent)
     DiscourseEvent.on(:user_promoted) do |args|
       # Reserved for tier-up email trigger.
+    end
+  end
+
+  # ===== v0.6.3 -- surface exceptions from phase controllers as JSON =====
+  # Without this, Discourse silently 500s with no log line for some exception
+  # classes, making field debugging impossible. Monkey-patch here so we don't
+  # have to edit each controller class body (the file editor has been
+  # truncating large files this session).
+  [
+    DiscourseCoinEngine::EconomyController,
+    DiscourseCoinEngine::SocialController,
+    DiscourseCoinEngine::IdentityController,
+    DiscourseCoinEngine::GovernanceController,
+    DiscourseCoinEngine::SurpriseController,
+  ].each do |klass|
+    klass.class_eval do
+      rescue_from StandardError do |e|
+        action = (action_name rescue '?')
+        Rails.logger.error("[coin_engine] #{self.class.name}##{action} -> #{e.class}: #{e.message}")
+        (e.backtrace || []).first(10).each { |frame| Rails.logger.error("  #{frame}") }
+        render json: {
+          errors: ["#{e.class}: #{e.message}"],
+          error_type: 'coin_engine_exception',
+          action: action,
+          where: (e.backtrace || []).first(3),
+        }, status: 500
+      end
     end
   end
 end
