@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.6.8
+# version: 0.6.9
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -58,6 +58,8 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_payments_controller.rb', __FILE__)
   # v0.6.8: explicitly register our app/views directory so admin_payments index template resolves
   DiscourseCoinEngine::AdminPaymentsController.prepend_view_path(File.expand_path('../app/views', __FILE__)) if defined?(DiscourseCoinEngine::AdminPaymentsController)
+  # v0.6.9: Discourse 2026 dropped the server-rendered admin layout. Use no_ember instead.
+  DiscourseCoinEngine::AdminPaymentsController.layout 'no_ember' if defined?(DiscourseCoinEngine::AdminPaymentsController)
   load File.expand_path('../app/controllers/discourse_coin_engine/embed_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/profile_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/insights_controller.rb', __FILE__)
