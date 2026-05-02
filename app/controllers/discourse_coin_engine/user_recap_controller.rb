@@ -61,16 +61,23 @@ module DiscourseCoinEngine
       user = User.find_by(username_lower: params[:username].to_s.downcase)
       raise Discourse::NotFound unless user
 
-      limit = (params[:limit] || 10).to_i.clamp(1, 50)
-      payments = ::DiscourseCoinEngine::Payment
-                   .where(user_id: user.id)
-                   .order(created_at: :desc)
-                   .limit(limit)
+      # v0.8.3: hard cap at 30 max, default 3 per page. User-facing endpoint is
+      # rate-limited by this cap to prevent ?limit=99999 enumeration. Pagination
+      # is page+per_page based.
+      per_page = (params[:limit] || params[:per_page] || 3).to_i.clamp(1, 30)
+      page     = (params[:page] || 1).to_i.clamp(1, 1000)
+      scope    = ::DiscourseCoinEngine::Payment.where(user_id: user.id).order(created_at: :desc)
+      total    = scope.count
+      payments = scope.limit(per_page).offset((page - 1) * per_page)
 
       render json: {
         username:  user.username,
         coin_name: SiteSetting.coin_engine_coin_name,
         ledger_topic_url: "/t/#{SiteSetting.coin_engine_ledger_topic_id}",
+        page:      page,
+        per_page:  per_page,
+        total:     total,
+        has_more:  total > page * per_page,
         payments: payments.map { |p|
           {
             id:           p.id,
