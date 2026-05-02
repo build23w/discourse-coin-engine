@@ -284,11 +284,11 @@ module DiscourseCoinEngine
     public
 
     def stats
-      total_distributed = ::DiscourseCoinEngine::Payment.where(status: 'sent').sum(:amount).to_i rescue 0
+      total_distributed = ::DiscourseCoinEngine::Payment.where.not(status: %w[cancelled refunded failed]).sum(:amount).to_i rescue 0
       payments_today    = ::DiscourseCoinEngine::Payment.where('created_at >= ?', Date.today.beginning_of_day).count rescue 0
       payments_week     = ::DiscourseCoinEngine::Payment.where('created_at >= ?', 7.days.ago).count rescue 0
       unique_users_paid = ::DiscourseCoinEngine::Payment.distinct.count(:user_id) rescue 0
-      pending_mints     = ::DiscourseCoinEngine::Payment.where(tx_signature: nil).where(status: 'sent').count rescue 0
+      pending_mints     = ::DiscourseCoinEngine::Payment.where(tx_signature: nil).where.not(status: %w[cancelled refunded failed minted]).count rescue 0
       render json: {
         total_distributed: total_distributed,
         payments_today: payments_today,
@@ -310,7 +310,7 @@ module DiscourseCoinEngine
       scope = ::User.where('users.id > 0').where(staged: false)
       if q.length >= 1
         pat = "%#{q.downcase}%"
-        scope = scope.where('LOWER(username) LIKE :p OR LOWER(name) LIKE :p OR LOWER(email) LIKE :p', p: pat)
+        scope = scope.where('LOWER(users.username) LIKE ? OR LOWER(users.name) LIKE ?', pat, pat)
       end
 
       total = scope.count
@@ -338,7 +338,7 @@ module DiscourseCoinEngine
 
       # Bulk-fetch scores, lifetime payments, and wallets
       scores  = user_ids.empty? ? {} : ::DiscourseCoinEngine.coin_user_total_bulk(user_ids)
-      payd    = user_ids.empty? ? {} : ::DiscourseCoinEngine::Payment.where(user_id: user_ids, status: 'sent').group(:user_id).pluck(:user_id, Arel.sql('SUM(amount)::int'), Arel.sql('MAX(sent_at)')).to_h { |uid, lifetime, last| [uid, { lifetime: lifetime, last_paid: last }] }
+      payd    = user_ids.empty? ? {} : ::DiscourseCoinEngine::Payment.where(user_id: user_ids).where.not(status: %w[cancelled refunded failed]).group(:user_id).pluck(:user_id, Arel.sql('SUM(amount)::int'), Arel.sql('MAX(sent_at)')).to_h { |uid, lifetime, last| [uid, { lifetime: lifetime, last_paid: last }] }
       wallet_field_id = (SiteSetting.coin_engine_solana_field_id rescue 1).to_i
       wallets = user_ids.empty? ? {} : ::UserCustomField.where(user_id: user_ids, name: "user_field_#{wallet_field_id}").pluck(:user_id, :value).to_h
 

@@ -315,7 +315,7 @@
   function loadRecent(){
     state.recentLoaded = true;
     var page = state.recentPage;
-    get('/admin/coin-engine/payments.json?page=' + page + '&per_page=25').then(function(d){
+    get('/admin/coin-engine/payments.json?page=' + (page - 1) + '&limit=25').then(function(d){
       var rows = (d.payments || []);
       var body = $('#ce-recent-body');
       if (!rows.length){ body.innerHTML = '<tr><td colspan="6" class="ce-empty">No payments yet on this page.</td></tr>'; }
