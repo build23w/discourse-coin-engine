@@ -291,3 +291,27 @@ plugins:
     default: 50000
     min: 0
     max: 1000000
+
+  # ===== v0.10.1: Verified Pro =====
+  coin_engine_verified_pro_min_account_age_days:
+    default: 7
+    min: 0
+    max: 365
+  coin_engine_verified_pro_min_trust_level:
+    default: 2
+    min: 0
+    max: 4
+  coin_engine_verified_pro_min_posts:
+    default: 5
+    min: 0
+    max: 10000
+  coin_engine_verified_pro_reapply_cooldown_days:
+    default: 30
+    min: 0
+    max: 365
+  coin_engine_verified_pro_bonus_reno:
+    default: 5000
+    min: 0
+    max: 1000000
+  coin_engine_verified_pro_badge_name:
+    default: "Verified Pro"

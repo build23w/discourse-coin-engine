@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.10.0
+# version: 0.10.1
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -291,6 +291,9 @@ after_initialize do
   # v0.10.0: random_reach bounty dispatcher
   load File.expand_path('../lib/discourse_coin_engine/bounty_dispatcher.rb', __FILE__)
   load File.expand_path('../app/jobs/regular/expire_bounty_round.rb', __FILE__)
+  # v0.10.1: Verified Pro admin queue + on-approval cascade
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_verified_pros_controller.rb', __FILE__)
+  DiscourseCoinEngine::AdminVerifiedProsController.layout false if defined?(DiscourseCoinEngine::AdminVerifiedProsController)
 
   # Username route constraint -- Discourse 2026.x removed User::USERNAME_ROUTE_FORMAT.
   # Inline regex matches the same characters Discourse usernames allow. The
@@ -320,6 +323,12 @@ after_initialize do
     # v0.7.0: stats banner + paginated all-user browser
     get  '/admin/coin-engine/stats.json'                             => 'discourse_coin_engine/admin_payments#stats'
     get  '/admin/coin-engine/users.json'                             => 'discourse_coin_engine/admin_payments#list_all_users'
+
+    # v0.10.1: Verified Pro admin queue
+    get  '/admin/coin-engine/verified_pros.json'                     => 'discourse_coin_engine/admin_verified_pros#index'
+    get  '/admin/coin-engine/verified_pros/stats.json'               => 'discourse_coin_engine/admin_verified_pros#stats'
+    post '/admin/coin-engine/verified_pros/:user_id/decide.json'        => 'discourse_coin_engine/admin_verified_pros#decide',       constraints: { user_id: %r{\d+} }
+    post '/admin/coin-engine/verified_pros/:user_id/request_info.json'  => 'discourse_coin_engine/admin_verified_pros#request_info', constraints: { user_id: %r{\d+} }
 
     # Pre-v0.4.5 alias kept alive for any in-flight bookmarks
     get  '/coin-engine/admin'                                        => 'discourse_coin_engine/admin_payments#index'
@@ -527,6 +536,18 @@ after_initialize do
     object.image_url.presence
   end
 
+  # v0.10.1 — Surface Verified Pro status on user cards / posts so themes can pin a pill.
+  add_to_serializer(:user_card, :coin_engine_verified_pro, include_condition: -> { SiteSetting.coin_engine_enabled }) do
+    next nil unless object && object.id
+    Rails.cache.fetch("coin_engine_vp_#{object.id}", expires_in: 10.minutes) do
+      vp = ::DiscourseCoinEngine::VerifiedPro.find_by(user_id: object.id)
+      next nil unless vp && vp.verification_status == 'verified'
+      { verified: true, company: vp.company_name, since: vp.verified_at }
+    end
+  rescue StandardError
+    nil
+  end
+
   add_to_serializer(:topic_list_item, :coin_engine_views, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     object.views
   end
@@ -592,6 +613,7 @@ after_initialize do
     DiscourseCoinEngine::PublicLedgerController,
     DiscourseCoinEngine::QuestsController,
     DiscourseCoinEngine::MeController,
+    DiscourseCoinEngine::AdminVerifiedProsController,
   ].each do |klass|
     klass.class_eval do
       rescue_from StandardError do |e|

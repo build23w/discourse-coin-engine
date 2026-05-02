@@ -106,6 +106,7 @@
     <button class="ce-tab" data-tab="recent">📒 Recent Payments</button>
     <button class="ce-tab" data-tab="users">👥 All Users</button>
     <button class="ce-tab" data-tab="mints">⛓️ Pending Mints <span class="ce-badge" id="ce-mint-badge" hidden></span></button>
+    <button class="ce-tab" data-tab="verified_pros">🎖 Verified Pros <span class="ce-badge" id="ce-vp-badge" hidden></span></button>
   </nav>
 
   <!-- Panels -->
@@ -212,6 +213,19 @@
     <h2>Pending Solana mints</h2>
     <p class="ce-sub">Payments that haven't yet been minted on-chain. Paste the Solana transaction signature once the mint completes to mark the payment as fully settled.</p>
     <div id="ce-mints-body"><div class="ce-empty">Loading...</div></div>
+  </div>
+
+  <div class="ce-panel" id="ce-pane-verified_pros" hidden>
+    <h2>Verified Pro applications</h2>
+    <p class="ce-sub">Approve / reject contractor verification applications. Approved pros get a custom title, a badge, and a sign-up bonus credited automatically.</p>
+    <div class="ce-toolbar">
+      <button class="ce-btn ce-btn-ghost" data-vp-filter="pending">Pending</button>
+      <button class="ce-btn ce-btn-ghost" data-vp-filter="verified">Verified</button>
+      <button class="ce-btn ce-btn-ghost" data-vp-filter="rejected">Rejected</button>
+      <button class="ce-btn ce-btn-ghost" data-vp-filter="revoked">Revoked</button>
+      <button class="ce-btn ce-btn-ghost" data-vp-filter="all">All</button>
+    </div>
+    <div id="ce-vp-body"><div class="ce-empty">Loading...</div></div>
   </div>
 </div>
 
@@ -800,6 +814,112 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else setTimeout(boot, 50);
+
+  // ===== v0.10.1 Verified Pro tab =====
+  var vpState = { filter: 'pending', page: 1 };
+  function vpEsc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, function(c){ return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]; }); }
+  function vpRender(records){
+    var body = document.getElementById('ce-vp-body');
+    if (!body) return;
+    if (!records || !records.length){ body.innerHTML = '<div class="ce-empty">No applications in this status.</div>'; return; }
+    body.innerHTML = records.map(function(r){
+      var u = r.user || {};
+      var ageDays = u.created_at ? Math.floor((Date.now() - new Date(u.created_at).getTime()) / 86400000) : '?';
+      var ageWarn = (typeof ageDays === 'number' && ageDays < 14) ? ' style="color:#c53030;font-weight:800"' : '';
+      var statusPill = ({pending:'ce-pill-pending',verified:'ce-pill-sent',rejected:'ce-pill-tx',revoked:'ce-pill-tx'})[r.status] || 'ce-pill-tx';
+      var actions = (r.status === 'pending')
+        ? '<button class="ce-btn ce-btn-primary" data-vp-act="approve" data-vp-uid="' + u.id + '">✓ Approve</button>' +
+          '<button class="ce-btn" data-vp-act="reject" data-vp-uid="' + u.id + '">Reject</button>' +
+          '<button class="ce-btn" data-vp-act="info" data-vp-uid="' + u.id + '">Request more info</button>'
+        : (r.status === 'verified'
+          ? '<button class="ce-btn ce-btn-danger" data-vp-act="revoke" data-vp-uid="' + u.id + '">Revoke</button>'
+          : '<button class="ce-btn" data-vp-act="approve" data-vp-uid="' + u.id + '">Re-approve</button>');
+      return '<div class="ce-mint-row" style="margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">' +
+          '<div>' +
+            '<strong style="font-size:14.5px">@' + vpEsc(u.username || '?') + '</strong>' +
+            '<span class="ce-pill ' + statusPill + '" style="margin-left:8px">' + r.status + '</span>' +
+            '<div style="font-size:11.5px;color:#5a6573;margin-top:2px">' +
+              'TL ' + (u.trust_level || 0) + '  ·  ' + (u.post_count || 0) + ' posts  ·  account ' +
+              '<span' + ageWarn + '>' + ageDays + 'd old</span>' +
+            '</div>' +
+          '</div>' +
+          '<a href="/u/' + vpEsc(u.username || '') + '" target="_blank" style="font-size:12px">View profile →</a>' +
+        '</div>' +
+        '<div style="background:#f7f9fc;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.5">' +
+          '<div><strong>Company:</strong> ' + vpEsc(r.company_name || '—') + '</div>' +
+          '<div><strong>License:</strong> ' + vpEsc(r.license_number || '—') + ' (' + vpEsc(r.license_state || '?') + ')' +
+            (r.registry_lookup_url ? ' <a href="' + r.registry_lookup_url + '" target="_blank" style="margin-left:6px;font-size:11.5px">verify in registry →</a>' : '') +
+            '</div>' +
+          (r.note ? '<div style="margin-top:6px"><strong>Applicant note:</strong> ' + vpEsc(r.note) + '</div>' : '') +
+          '<div style="margin-top:6px;font-size:11.5px;color:#8b95a3">Submitted ' + (r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '?') +
+            (r.decided_by ? '  ·  decided by @' + vpEsc(r.decided_by.username) : '') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + actions + '</div>' +
+      '</div>';
+    }).join('');
+    // Wire action buttons
+    body.querySelectorAll('[data-vp-act]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var act = btn.getAttribute('data-vp-act');
+        var uid = btn.getAttribute('data-vp-uid');
+        var status = ({approve:'verified',reject:'rejected',revoke:'revoked'})[act];
+        if (act === 'info'){
+          var msg = prompt('What info do you need from the applicant?');
+          if (!msg || !msg.trim()) return;
+          post('/admin/coin-engine/verified_pros/' + uid + '/request_info.json', { message: msg })
+            .then(function(){ toast('Info request sent', 'win'); })
+            .catch(function(e){ toast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
+          return;
+        }
+        var note = prompt('Optional note for the applicant (visible to them):');
+        if (note === null) return; // cancelled
+        btn.disabled = true;
+        post('/admin/coin-engine/verified_pros/' + uid + '/decide.json', { status: status, note: note })
+          .then(function(d){
+            toast('Decision recorded', 'win');
+            vpLoad(vpState.filter);
+            vpLoadStats();
+          })
+          .catch(function(e){
+            toast((e && e.errors && e.errors[0]) || 'Failed', 'err');
+            btn.disabled = false;
+          });
+      });
+    });
+  }
+  function vpLoad(status){
+    vpState.filter = status;
+    document.querySelectorAll('[data-vp-filter]').forEach(function(b){
+      b.classList.toggle('ce-btn-primary', b.getAttribute('data-vp-filter') === status);
+    });
+    var body = document.getElementById('ce-vp-body');
+    if (body) body.innerHTML = '<div class="ce-empty">Loading...</div>';
+    get('/admin/coin-engine/verified_pros.json?status=' + encodeURIComponent(status) + '&limit=100')
+      .then(function(d){ vpRender(d.records || []); })
+      .catch(function(e){
+        if (body) body.innerHTML = '<div class="ce-empty">Failed to load. ' + vpEsc((e && e.errors && e.errors[0]) || '') + '</div>';
+      });
+  }
+  function vpLoadStats(){
+    get('/admin/coin-engine/verified_pros/stats.json').then(function(d){
+      var badge = document.getElementById('ce-vp-badge');
+      if (badge && d){
+        if (d.pending > 0){ badge.textContent = d.pending; badge.hidden = false; }
+        else { badge.hidden = true; }
+      }
+    }).catch(function(){});
+  }
+  // Wire filter pills
+  document.querySelectorAll('[data-vp-filter]').forEach(function(b){
+    b.addEventListener('click', function(){ vpLoad(b.getAttribute('data-vp-filter')); });
+  });
+  // Auto-load stats on page boot + reload on tab activation
+  vpLoadStats();
+  document.querySelectorAll('.ce-tab[data-tab="verified_pros"]').forEach(function(t){
+    t.addEventListener('click', function(){ vpLoad(vpState.filter); });
+  });
+
 })();
 </script>
 

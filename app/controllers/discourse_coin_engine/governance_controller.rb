@@ -36,19 +36,77 @@ module DiscourseCoinEngine
       render_json_error('already voted')
     end
 
-    # POST /coin-engine/governance/verified_pro/apply.json { company_name, license_number, license_state, note? }
+    # POST /coin-engine/governance/verified_pro/apply.json
+    # v0.10.1 — anti-spam guards (account age, TL, post count, reapply cooldown).
     def apply_verified_pro
-      vp = VerifiedPro.find_by(user_id: current_user.id) ||
-           VerifiedPro.new(user_id: current_user.id, verification_status: 'pending')
+      raise Discourse::InvalidAccess unless current_user
+
+      company = params[:company_name].to_s.strip
+      lic_num = params[:license_number].to_s.strip
+      lic_st  = params[:license_state].to_s.strip
+      return render_json_error('company_name required',   status: 422) if company.length < 2
+      return render_json_error('license_number required', status: 422) if lic_num.length < 3
+      return render_json_error('license_state required',  status: 422) if lic_st.empty?
+
+      min_age_days = (SiteSetting.coin_engine_verified_pro_min_account_age_days rescue 7).to_i
+      min_tl       = (SiteSetting.coin_engine_verified_pro_min_trust_level     rescue 2).to_i
+      min_posts    = (SiteSetting.coin_engine_verified_pro_min_posts           rescue 5).to_i
+      reapply_days = (SiteSetting.coin_engine_verified_pro_reapply_cooldown_days rescue 30).to_i
+
+      if current_user.created_at > min_age_days.days.ago
+        return render_json_error("Account must be at least #{min_age_days} days old to apply", status: 422)
+      end
+      if current_user.trust_level < min_tl
+        return render_json_error("Reach trust level #{min_tl} before applying", status: 422)
+      end
+      if current_user.post_count.to_i < min_posts
+        return render_json_error("Make at least #{min_posts} posts before applying", status: 422)
+      end
+
+      existing = VerifiedPro.find_by(user_id: current_user.id)
+      if existing
+        case existing.verification_status
+        when 'pending'
+          return render_json_error('Please wait before resubmitting (1/hour)', status: 429) if existing.updated_at > 1.hour.ago
+        when 'verified'
+          return render_json_error('You are already a Verified Pro', status: 422)
+        when 'rejected'
+          if existing.updated_at > reapply_days.days.ago
+            ends_at = (existing.updated_at + reapply_days.days).strftime('%Y-%m-%d')
+            return render_json_error("You can reapply after #{ends_at}", status: 429)
+          end
+        when 'revoked'
+          return render_json_error('Your status was revoked. Please contact staff.', status: 422)
+        end
+      end
+
+      vp = existing || VerifiedPro.new(user_id: current_user.id)
       vp.assign_attributes(
-        company_name: params[:company_name].to_s[0, 200],
-        license_number: params[:license_number].to_s[0, 100],
-        license_state: params[:license_state].to_s[0, 50],
-        note: params[:note].to_s[0, 2000],
+        company_name:        company[0, 200],
+        license_number:      lic_num[0, 100],
+        license_state:       lic_st[0, 50],
+        note:                params[:note].to_s[0, 2000],
         verification_status: 'pending',
       )
       vp.save!
-      render json: { id: vp.id, status: vp.verification_status }
+
+      begin
+        admins = ::User.where(admin: true, active: true).pluck(:username)
+        if admins.any?
+          ::PostCreator.create!(
+            ::Discourse.system_user,
+            title: "🆕 Verified Pro application: #{company}",
+            raw: "@#{current_user.username} just applied as **#{company}** (license #{lic_num}, #{lic_st}).\n\n[Review →](/admin/coin-engine#verified_pros)",
+            archetype: ::Archetype.private_message,
+            target_usernames: admins.first(10).join(','),
+            skip_validations: true,
+          )
+        end
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine] verified_pro admin PM failed: #{e.message}")
+      end
+
+      render json: { id: vp.id, status: vp.verification_status, message: 'Application submitted. Admins typically review within 48 hours.' }
     end
 
     # GET /coin-engine/governance/verified_pro/:username.json (public)
@@ -60,6 +118,8 @@ module DiscourseCoinEngine
     end
 
     # POST /coin-engine/governance/verified_pro/:user_id/decision.json { status, note? } (admin only)
+    # LEGACY: prefer the admin tab at /admin/coin-engine#verified_pros which uses
+    # AdminVerifiedProsController and applies the full on-approval cascade.
     def decide_verified_pro
       raise Discourse::InvalidAccess unless current_user.admin?
       vp = VerifiedPro.find_by(user_id: params[:user_id])
