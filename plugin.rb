@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.7.5
+# version: 0.7.6
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -32,6 +32,16 @@ module ::DiscourseCoinEngine
     rescue StandardError => e
       Rails.logger.warn("[coin_engine] LeaderboardCachedView.refresh failed: #{e.class}: #{e.message}")
     end
+  end
+
+  def self.coin_user_total_bulk(user_ids)
+    return {} unless user_ids.is_a?(Array) && !user_ids.empty?
+    ids = user_ids.map(&:to_i).reject { |i| i <= 0 }
+    return {} if ids.empty?
+    sql = "SELECT user_id, COALESCE(SUM(score), 0)::int AS total FROM gamification_scores WHERE user_id IN (#{ids.join(',')}) GROUP BY user_id"
+    ActiveRecord::Base.connection.exec_query(sql, 'coin_user_total_bulk').rows.to_h
+  rescue StandardError
+    {}
   end
 end
 

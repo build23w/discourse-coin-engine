@@ -304,17 +304,63 @@ module DiscourseCoinEngine
     def list_all_users
       page     = (params[:page] || 1).to_i.clamp(1, 1000)
       per_page = (params[:per_page] || 25).to_i.clamp(1, 100)
-      q        = params[:q].to_s.strip.downcase
+      q        = params[:q].to_s.strip
       sort     = params[:sort].to_s
 
-      order_by = case sort
-                 when 'score_asc'    then 'score_total ASC NULLS LAST'
-                 when 'created_desc' then 'u.created_at DESC'
-                 when 'created_asc'  then 'u.created_at ASC'
-                 when 'paid_desc'    then 'lifetime_received DESC NULLS LAST'
-                 when 'paid_recent'  then 'last_paid_at DESC NULLS LAST'
-                 else                     'score_total DESC NULLS LAST'
-                 end
+      scope = ::User.where('users.id > 0').where(staged: false)
+      if q.length >= 1
+        pat = "%#{q.downcase}%"
+        scope = scope.where('LOWER(username) LIKE :p OR LOWER(name) LIKE :p OR LOWER(email) LIKE :p', p: pat)
+      end
+
+      total = scope.count
+
+      score_join = "LEFT JOIN (SELECT user_id, SUM(score) AS total FROM gamification_scores GROUP BY user_id) gs ON gs.user_id = users.id"
+      paid_join  = "LEFT JOIN (SELECT user_id, SUM(amount) AS lifetime, MAX(sent_at) AS last_paid FROM coin_engine_payments WHERE status = 'sent' GROUP BY user_id) pp ON pp.user_id = users.id"
+
+      case sort
+      when 'score_asc'
+        scope = scope.joins(score_join).order(Arel.sql('COALESCE(gs.total, 0) ASC NULLS LAST'))
+      when 'created_desc'
+        scope = scope.order(created_at: :desc)
+      when 'created_asc'
+        scope = scope.order(created_at: :asc)
+      when 'paid_desc'
+        scope = scope.joins(paid_join).order(Arel.sql('COALESCE(pp.lifetime, 0) DESC NULLS LAST'))
+      when 'paid_recent'
+        scope = scope.joins(paid_join).order(Arel.sql('pp.last_paid DESC NULLS LAST'))
+      else
+        scope = scope.joins(score_join).order(Arel.sql('COALESCE(gs.total, 0) DESC NULLS LAST'))
+      end
+
+      users = scope.offset((page - 1) * per_page).limit(per_page).select('users.*').to_a
+      user_ids = users.map(&:id)
+
+      # Bulk-fetch scores, lifetime payments, and wallets
+      scores  = user_ids.empty? ? {} : ::DiscourseCoinEngine.coin_user_total_bulk(user_ids)
+      payd    = user_ids.empty? ? {} : ::DiscourseCoinEngine::Payment.where(user_id: user_ids, status: 'sent').group(:user_id).pluck(:user_id, Arel.sql('SUM(amount)::int'), Arel.sql('MAX(sent_at)')).to_h { |uid, lifetime, last| [uid, { lifetime: lifetime, last_paid: last }] }
+      wallet_field_id = (SiteSetting.coin_engine_solana_field_id rescue 1).to_i
+      wallets = user_ids.empty? ? {} : ::UserCustomField.where(user_id: user_ids, name: "user_field_#{wallet_field_id}").pluck(:user_id, :value).to_h
+
+      out = users.map do |u|
+        p = payd[u.id] || {}
+        {
+          id: u.id, username: u.username, name: u.name, email: u.email,
+          trust_level: u.trust_level,
+          score: scores[u.id] || 0,
+          lifetime_received: p[:lifetime] || 0,
+          last_paid_at: p[:last_paid],
+          wallet: wallets[u.id],
+        }
+      end
+
+      render json: { users: out, total: total, page: page, per_page: per_page }
+    rescue StandardError => e
+      Rails.logger.error("[coin_engine] list_all_users: #{e.class}: #{e.message}")
+      (e.backtrace || []).first(10).each { |f| Rails.logger.error("  #{f}") }
+      render json: { errors: ["#{e.class}: #{e.message}"], where: (e.backtrace || []).first(5) }, status: 500
+    end
+    end
 
     private
 
