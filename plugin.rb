@@ -326,6 +326,7 @@ after_initialize do
     get  '/coin-engine/ledger/bounties.json'                         => 'discourse_coin_engine/public_ledger#bounties'
     get  '/coin-engine/ledger/votes.json'                            => 'discourse_coin_engine/public_ledger#votes'
     get  '/coin-engine/ledger/redemptions.json'                      => 'discourse_coin_engine/public_ledger#redemptions'
+    get  '/coin-engine/ledger/payments.json'                         => 'discourse_coin_engine/public_ledger#payments'
   end
 
   # ===== Serializer enrichment =====

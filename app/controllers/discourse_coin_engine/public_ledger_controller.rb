@@ -86,6 +86,30 @@ module DiscourseCoinEngine
         end
       end
 
+      # Manual + on-chain payments (Payment model — these are the staff-issued
+      # awards and Solana mints. Probably the most-watched ledger entry type
+      # since they include real on-chain tx signatures users can verify.)
+      ::DiscourseCoinEngine::Payment
+        .where.not(status: %w[cancelled refunded failed])
+        .order(Arel.sql('COALESCE(sent_at, created_at) DESC'))
+        .limit(limit)
+        .each do |p|
+          recip = ::User.find_by(id: p.user_id)
+          issuer = p.issued_by_user_id ? ::User.find_by(id: p.issued_by_user_id) : nil
+          events << {
+            type: 'payment',
+            ts: (p.sent_at || p.created_at).to_i,
+            amount: p.amount.to_i,
+            sender:    issuer ? { username: issuer.username, name: issuer.name } : nil,
+            recipient: recip  ? { username: recip.username,  name: recip.name  } : nil,
+            note: p.reason.to_s.presence,
+            tx_signature: p.tx_signature,
+            tx_explorer:  p.tx_signature ? "https://solscan.io/tx/#{p.tx_signature}" : nil,
+            payment_id: p.id,
+            status: p.status,
+          }
+        end
+
       events.sort_by! { |e| -e[:ts] }
       events = events.first(limit)
 
@@ -127,6 +151,20 @@ module DiscourseCoinEngine
       total = scope.count
       bs    = scope.limit(limit).offset((page - 1) * limit)
       render json: render_paginated(bs, page, limit, total) { |b| serialize_ballot(b) }
+    end
+
+    # GET /coin-engine/ledger/payments.json?page=1&limit=20
+    # Manual staff-issued payments + on-chain Solana mints. Filtered to exclude
+    # cancelled/refunded/failed so only the "real" community-visible audit lives here.
+    def payments
+      page  = (params[:page]  || 1).to_i.clamp(1, 1000)
+      limit = (params[:limit] || 20).to_i.clamp(1, 100)
+      scope = ::DiscourseCoinEngine::Payment
+                .where.not(status: %w[cancelled refunded failed])
+                .order(Arel.sql('COALESCE(sent_at, created_at) DESC'))
+      total = scope.count
+      ps    = scope.limit(limit).offset((page - 1) * limit)
+      render json: render_paginated(ps, page, limit, total) { |p| serialize_payment(p) }
     end
 
     # GET /coin-engine/ledger/redemptions.json?page=1&limit=20
@@ -188,6 +226,23 @@ module DiscourseCoinEngine
         voter: u ? { username: u.username, name: u.name } : nil,
         vote_slug: v&.slug, vote_title: v&.title,
         option_key: b.option_key,
+      }
+    end
+
+    def serialize_payment(p)
+      recip  = ::User.find_by(id: p.user_id)
+      issuer = p.issued_by_user_id ? ::User.find_by(id: p.issued_by_user_id) : nil
+      {
+        id: p.id,
+        ts: (p.sent_at || p.created_at).to_i,
+        amount: p.amount.to_i,
+        recipient: recip  ? { username: recip.username,  name: recip.name  } : nil,
+        sender:    issuer ? { username: issuer.username, name: issuer.name } : nil,
+        reason: p.reason.to_s,
+        status: p.status,
+        wallet: p.wallet_address.to_s.presence,
+        tx_signature: p.tx_signature,
+        tx_explorer: p.tx_signature ? "https://solscan.io/tx/#{p.tx_signature}" : nil,
       }
     end
 
