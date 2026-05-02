@@ -749,14 +749,26 @@
   }
 
   // ---------- Hook the existing payment submit ----------
+  // v0.10.3 — per-payment-id guard prevents the tx.json PUT from firing twice
+  // for one Phantom signing. The fetch wrapper would occasionally re-trigger
+  // (Discourse retries on transient errors), and the backend's unique partial
+  // index on tx_signature crashed the second call. Now we track sealed payment
+  // IDs in a Set + dedupe sigs in-flight.
+  var __ceSealedPaymentIds = new Set();
+  var __ceTxPutInflight = new Set();
+
   function hookPaymentSubmit(){
     var btn = document.getElementById('ce-pay-submit');
     if (!btn || btn.__lfWeb3Wrapped) return;
     btn.__lfWeb3Wrapped = true;
 
+    // v0.10.3 — disable the submit button on click for 3s to absorb double-clicks.
     btn.addEventListener('click', async function(e){
       var checkbox = document.getElementById('ce-pay-onchain');
       if (!checkbox || !checkbox.checked) return;
+      if (btn.disabled) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+      btn.disabled = true;
+      setTimeout(function(){ btn.disabled = false; }, 3000);
     }, true);
 
     // Intercept window.fetch ONLY for our specific POST so we can chain after success
@@ -771,21 +783,48 @@
               var clone = resp.clone();
               var d = await clone.json();
               if (d && d.ok && d.payment){
+                var paymentId = d.payment.id;
+                // Guard 1: this payment row was already minted in this session.
+                if (__ceSealedPaymentIds.has(paymentId)){
+                  console.warn('[ce-solana] payment '+paymentId+' already sealed; skipping duplicate tx PUT');
+                  return resp;
+                }
+                // Guard 2: a tx PUT for this payment is already in-flight.
+                if (__ceTxPutInflight.has(paymentId)){
+                  console.warn('[ce-solana] payment '+paymentId+' tx PUT already in-flight; skipping');
+                  return resp;
+                }
+                __ceTxPutInflight.add(paymentId);
+
                 var amt = d.payment.amount;
                 var username = d.payment.username || (d.payment.user && d.payment.user.username);
                 var recipientWallet = d.payment.wallet || (username ? await getRecipientWallet(username) : null);
                 if (!recipientWallet){
+                  __ceTxPutInflight.delete(paymentId);
                   toast('Recipient has no wallet linked. Recorded only — they can claim later.', 'info');
                   return resp;
                 }
                 toast('Signing transaction in Phantom...', 'info');
-                var sig = await sendSplTransfer(recipientWallet, amt);
-                await origFetch('/admin/coin-engine/payments/'+d.payment.id+'/tx.json', {
-                  method: 'PUT', credentials: 'same-origin',
-                  headers: { 'Content-Type':'application/json', 'X-CSRF-Token': (document.querySelector('meta[name=csrf-token]')||{}).getAttribute && document.querySelector('meta[name=csrf-token]').getAttribute('content') },
-                  body: JSON.stringify({ tx_signature: sig })
-                });
-                toast('✅ Minted on-chain · '+sig.slice(0,8)+'…', 'win');
+                try {
+                  var sig = await sendSplTransfer(recipientWallet, amt);
+                  // Mark sealed BEFORE the PUT so a retry of this whole closure
+                  // won't even re-enter the sign step.
+                  __ceSealedPaymentIds.add(paymentId);
+                  var putResp = await origFetch('/admin/coin-engine/payments/'+paymentId+'/tx.json', {
+                    method: 'PUT', credentials: 'same-origin',
+                    headers: { 'Content-Type':'application/json', 'X-CSRF-Token': (document.querySelector('meta[name=csrf-token]')||{}).getAttribute && document.querySelector('meta[name=csrf-token]').getAttribute('content') },
+                    body: JSON.stringify({ tx_signature: sig })
+                  });
+                  // 200 OK includes already_set=true if the backend saw a duplicate — no error to user.
+                  if (putResp.ok){
+                    toast('✅ Minted on-chain · '+sig.slice(0,8)+'…', 'win');
+                  } else if (putResp.status === 422){
+                    var body = await putResp.json().catch(function(){ return {}; });
+                    toast((body.errors && body.errors[0]) || 'tx signature conflict — already used', 'err');
+                  }
+                } finally {
+                  __ceTxPutInflight.delete(paymentId);
+                }
               }
             } catch(err){
               var msg = err && err.message ? err.message : String(err);

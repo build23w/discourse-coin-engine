@@ -190,16 +190,44 @@ module DiscourseCoinEngine
 
     # PUT /admin/plugins/coin-engine/payments/:id/tx.json
     # body: { tx_signature: "..." }
+    # v0.10.3 — idempotent. The frontend's fetch-interceptor occasionally fires
+    # this PUT twice for one signing (race during Phantom approval), and the
+    # tx_signature column has a unique partial index. Previously the second
+    # call raised RecordNotUnique → rescue_from served a 500 to the admin.
+    # Now: same payment + same sig → 200 no-op. Different payment trying to
+    # claim a sig already used elsewhere → 422 with a clear message.
     def update_tx_signature
       payment = ::DiscourseCoinEngine::Payment.find_by(id: params[:id])
       raise Discourse::NotFound unless payment
       tx = params[:tx_signature].to_s.strip
       raise Discourse::InvalidParameters, 'tx_signature' if tx.blank?
 
-      payment.update!(tx_signature: tx, tx_added_at: Time.zone.now, status: 'on_chain')
+      # Already set on this payment? No-op success — handles double-fire.
+      if payment.tx_signature.to_s == tx
+        return render json: { ok: true, payment: serialize_payment(payment), already_set: true }
+      end
 
-      # Update the public ledger row by editing the receipt PM payment line
-      # to include the tx hash. Best-effort.
+      # tx_signature is set on a DIFFERENT payment? Reject with a useful message.
+      other = ::DiscourseCoinEngine::Payment.where(tx_signature: tx).where.not(id: payment.id).first
+      if other
+        return render json: {
+          errors: ["This Solana tx signature is already attached to payment ##{other.id} (@#{::User.find_by(id: other.user_id)&.username}). Each on-chain transaction can only back ONE payment record."],
+          conflicting_payment_id: other.id
+        }, status: 422
+      end
+
+      begin
+        payment.update!(tx_signature: tx, tx_added_at: Time.zone.now, status: 'on_chain')
+      rescue ActiveRecord::RecordNotUnique
+        # Race condition: another concurrent request grabbed the sig between
+        # our SELECT and our UPDATE. Re-fetch and treat as no-op if it's now ours.
+        payment.reload
+        if payment.tx_signature.to_s == tx
+          return render json: { ok: true, payment: serialize_payment(payment), already_set: true }
+        end
+        return render json: { errors: ['This tx signature was just claimed by another payment. Refresh and try again.'] }, status: 422
+      end
+
       begin
         update_ledger_with_tx(payment)
       rescue StandardError => e
@@ -376,10 +404,11 @@ module DiscourseCoinEngine
       when 'paid_recent'
         scope = scope.joins(paid_join).order(Arel.sql('pp.last_paid DESC NULLS LAST'))
       else
-        scope = scope.joins(score_join).order(Arel.sql('COALESCE(gs.total, 0) DESC NULLS LAST'))
+        scope = scope.joins(score_join).order(Arel.sql('COALESCE(gs.total, 0) DESC, users.id ASC'))
       end
 
-      users = scope.offset((page - 1) * per_page).limit(per_page).select('users.*').to_a
+      total = scope.count
+      users = scope.limit(per_page).offset((page - 1) * per_page).to_a
       user_ids = users.map(&:id)
 
       # Bulk-fetch scores, lifetime payments, and wallets
