@@ -38,8 +38,13 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/governance/verified_pro/apply.json
     # v0.10.1 — anti-spam guards (account age, TL, post count, reapply cooldown).
+    # v0.10.2 — added Discourse RateLimiter to prevent admin-PM-spam DoS.
     def apply_verified_pro
       raise Discourse::InvalidAccess unless current_user
+
+      # 5 applications per user per hour (covers both new and resubmissions).
+      # If exceeded, RateLimiter raises and Discourse returns 429.
+      RateLimiter.new(current_user, "verified_pro_apply", 5, 1.hour).performed!
 
       company = params[:company_name].to_s.strip
       lic_num = params[:license_number].to_s.strip

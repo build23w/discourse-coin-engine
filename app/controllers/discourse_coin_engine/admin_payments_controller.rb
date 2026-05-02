@@ -81,6 +81,11 @@ module DiscourseCoinEngine
       amount = params[:amount].to_i
       reason = params[:reason].to_s.strip.presence || 'Manual payment'
       raise Discourse::InvalidParameters, 'amount' if amount == 0
+      # v0.10.2 — defense-in-depth cap on a single manual payment.
+      max_single = (SiteSetting.coin_engine_max_airdrop_amount rescue 1_000_000).to_i
+      if amount.abs > max_single
+        return render json: { errors: ["amount exceeds max single payment (#{max_single})"] }, status: 422
+      end
 
       # v0.8.0 safety: never let payments exceed the user's earned $RENO.
       # earned = total in gamification_scores (includes prior payment credits, but

@@ -4,7 +4,9 @@ module DiscourseCoinEngine
   class AdminAirdropController < ::ApplicationController
     requires_plugin DiscourseCoinEngine::PLUGIN_NAME
     before_action :ensure_logged_in
-    before_action :ensure_staff
+    # v0.10.2 — was ensure_staff (allows mods); promoted to admin-only since
+    # this endpoint mints $RENO. Mods retain read access via the public ledger.
+    before_action :ensure_admin
     skip_before_action :preload_json
     skip_before_action :check_xhr
 
@@ -28,6 +30,12 @@ module DiscourseCoinEngine
       source   = params[:source].to_s.presence || 'admin-airdrop'
 
       raise Discourse::InvalidParameters, 'amount' if amount == 0
+      # v0.10.2 — defense-in-depth: cap a single airdrop. Compromised admin
+      # account or fat-finger typo could otherwise nuke the economy.
+      max_single = (SiteSetting.coin_engine_max_airdrop_amount rescue 1_000_000).to_i
+      if amount.abs > max_single
+        raise Discourse::InvalidParameters, "amount exceeds max single airdrop (#{max_single})"
+      end
       user = User.find_by(username_lower: username.downcase)
       raise Discourse::NotFound unless user
 
@@ -66,9 +74,21 @@ module DiscourseCoinEngine
       if webhook_url.present? && SiteSetting.coin_engine_webhook_events.to_s.include?('airdrop')
         begin
           require 'net/http'
+          require 'resolv'
           uri = URI.parse(webhook_url)
+          # v0.10.2 — SSRF defense: only http/https, only public IPs.
+          unless %w[http https].include?(uri.scheme)
+            raise "webhook scheme must be http(s)"
+          end
+          # Resolve hostname → IP, refuse private/link-local/loopback ranges.
+          # An admin can still set a public webhook (the intended use), but a
+          # compromised SiteSetting can't probe internal services.
+          resolved = (Resolv.getaddresses(uri.host) || []).first
+          if resolved && private_ip?(resolved)
+            raise "webhook host resolves to private IP: #{resolved}"
+          end
           payload = { event: 'airdrop', username: user.username, amount: amount, reason: reason, source: source, at: Time.zone.now.iso8601 }.to_json
-          Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https') do |http|
+          Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', open_timeout: 5, read_timeout: 5) do |http|
             req = Net::HTTP::Post.new(uri.path.presence || '/', { 'Content-Type' => 'application/json' })
             req.body = payload
             http.request(req)
@@ -83,6 +103,21 @@ module DiscourseCoinEngine
     end
 
     private
+
+    # v0.10.2 - block private IP ranges + loopback + link-local + metadata IP
+    # to prevent SSRF via the webhook setting.
+    def private_ip?(addr)
+      return false unless addr
+      ip = IPAddr.new(addr) rescue nil
+      return true unless ip
+      [
+        '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
+        '127.0.0.0/8',
+        '169.254.0.0/16',
+        '::1/128', 'fc00::/7', 'fe80::/10',
+        '0.0.0.0/8',
+      ].any? { |range| IPAddr.new(range).include?(ip) rescue false }
+    end
 
     def append_to_ledger(user:, amount:, reason:, source:)
       topic_id = SiteSetting.coin_engine_ledger_topic_id.to_i

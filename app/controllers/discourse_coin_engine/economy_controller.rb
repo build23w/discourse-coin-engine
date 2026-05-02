@@ -22,6 +22,19 @@ module DiscourseCoinEngine
       sender_balance = ::DiscourseCoinEngine.coin_user_total(current_user.id)
       return render_json_error('insufficient balance', status: 422) if sender_balance < amount
 
+      # v0.10.2 — enforce the existing tip_max_per_day setting (was defined but unused).
+      # Counts $RENO tipped in the last 24h, refuses if this tip would push over.
+      max_per_day = (SiteSetting.coin_engine_tip_max_per_day rescue 1000).to_i
+      if max_per_day > 0
+        sent_today = Tip.where(sender_user_id: current_user.id).where('created_at > ?', 24.hours.ago).sum(:amount).to_i
+        if sent_today + amount > max_per_day
+          return render_json_error("Daily tip cap reached (#{max_per_day} #{SiteSetting.coin_engine_coin_name}). Already tipped #{sent_today} in last 24h.", status: 429)
+        end
+      end
+      # Min amount enforcement (also already a setting but never checked).
+      min_amount = (SiteSetting.coin_engine_tip_min_amount rescue 10).to_i
+      return render_json_error("Minimum tip is #{min_amount}", status: 422) if amount < min_amount
+
       tip = nil
       ActiveRecord::Base.transaction do
         # Debit sender, credit recipient via gamification_scores rows.
