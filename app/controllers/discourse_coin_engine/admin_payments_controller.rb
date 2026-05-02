@@ -360,58 +360,5 @@ module DiscourseCoinEngine
       (e.backtrace || []).first(10).each { |f| Rails.logger.error("  #{f}") }
       render json: { errors: ["#{e.class}: #{e.message}"], where: (e.backtrace || []).first(5) }, status: 500
     end
-    end
-
-    private
-
-      where = "u.id > 0 AND u.staged = false AND u.suspended_till IS NULL"
-      if q.length >= 1
-        where += " AND (LOWER(u.username) LIKE :q OR LOWER(u.name) LIKE :q OR LOWER(u.email) LIKE :q)"
-      end
-
-      wallet_field_id = (SiteSetting.coin_engine_solana_field_id rescue 1).to_i
-
-      sql = <<~SQL
-        WITH score_per_user AS (
-          SELECT user_id, SUM(score)::int AS score_total
-          FROM gamification_scores GROUP BY user_id
-        ),
-        paid_per_user AS (
-          SELECT user_id, SUM(amount)::int AS lifetime_received, MAX(sent_at) AS last_paid_at
-          FROM coin_engine_payments WHERE status = 'sent' GROUP BY user_id
-        )
-        SELECT u.id, u.username, u.name, u.email, u.trust_level, u.created_at,
-               COALESCE(s.score_total, 0) AS score_total,
-               COALESCE(p.lifetime_received, 0) AS lifetime_received,
-               p.last_paid_at,
-               uf.value AS wallet
-        FROM users u
-        LEFT JOIN score_per_user s ON s.user_id = u.id
-        LEFT JOIN paid_per_user p  ON p.user_id = u.id
-        LEFT JOIN user_custom_fields uf ON uf.user_id = u.id AND uf.name = :wallet_key
-        WHERE #{where}
-        ORDER BY #{order_by}
-        LIMIT :limit OFFSET :offset
-      SQL
-
-      bind = { q: "%#{q}%", limit: per_page, offset: (page - 1) * per_page, wallet_key: "user_field_#{wallet_field_id}" }
-      rows = ActiveRecord::Base.connection.exec_query(ActiveRecord::Base.send(:sanitize_sql_for_conditions, [sql, bind])).to_a
-      total = ActiveRecord::Base.connection.exec_query(
-        ActiveRecord::Base.send(:sanitize_sql_for_conditions,
-          ["SELECT COUNT(*) AS c FROM users u WHERE #{where}", bind])
-      ).rows.first&.first.to_i
-
-      render json: {
-        users: rows.map { |r| {
-          id: r['id'], username: r['username'], name: r['name'], email: r['email'],
-          trust_level: r['trust_level'], score: r['score_total'],
-          lifetime_received: r['lifetime_received'], last_paid_at: r['last_paid_at'],
-          wallet: r['wallet'],
-        }},
-        total: total, page: page, per_page: per_page,
-      }
-    rescue StandardError => e
-      render json: { errors: [e.message] }, status: 500
-    end
   end
 end
