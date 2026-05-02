@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.8.1
+# version: 0.8.2
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -42,6 +42,44 @@ module ::DiscourseCoinEngine
     ActiveRecord::Base.connection.exec_query(sql, 'coin_user_total_bulk').rows.to_h
   rescue StandardError
     {}
+  end
+
+  # v0.8.2: Solana address validation. Solana addresses are base58-encoded
+  # ed25519 public keys -> exactly 32 bytes when decoded. Length when base58-
+  # encoded falls in 32..44 chars. The base58 alphabet excludes 0/O/I/l to
+  # avoid visual confusion. We hand-roll the decoder so we don't depend on
+  # a base58 gem.
+  BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'.freeze
+
+  def self.base58_decode(str)
+    return nil if str.nil? || str.empty?
+    num = 0
+    str.each_char do |c|
+      idx = BASE58_ALPHABET.index(c)
+      return nil if idx.nil?
+      num = num * 58 + idx
+    end
+    bytes = []
+    while num > 0
+      bytes.unshift(num & 0xFF)
+      num >>= 8
+    end
+    # Each leading "1" in base58 represents a leading 0 byte
+    str.each_char do |c|
+      break unless c == '1'
+      bytes.unshift(0)
+    end
+    bytes.pack('C*')
+  rescue StandardError
+    nil
+  end
+
+  def self.valid_solana_address?(addr)
+    return false unless addr.is_a?(String)
+    addr = addr.strip
+    return false unless addr.match?(/\A[1-9A-HJ-NP-Za-km-z]{32,44}\z/)
+    decoded = base58_decode(addr)
+    !decoded.nil? && decoded.bytesize == 32
   end
 end
 
@@ -341,6 +379,21 @@ after_initialize do
   if defined?(DiscourseEvent)
     DiscourseEvent.on(:user_promoted) do |args|
       # Reserved for tier-up email trigger.
+    end
+  end
+
+
+  # v0.8.2: validate the Solana wallet user_field on every user save. Strip if invalid.
+  on(:user_updated) do |user|
+    field_id = SiteSetting.coin_engine_solana_field_id.to_i rescue 0
+    next if field_id <= 0
+    key = "user_field_#{field_id}"
+    val = user.custom_fields[key].to_s.strip
+    next if val.empty?
+    unless DiscourseCoinEngine.valid_solana_address?(val)
+      user.custom_fields[key] = nil
+      user.save_custom_fields(true)
+      Rails.logger.warn("[coin_engine] stripped invalid Solana wallet from user #{user.id}: #{val[0,8]}...")
     end
   end
 
