@@ -870,26 +870,48 @@
         if (act === 'info'){
           var msg = prompt('What info do you need from the applicant?');
           if (!msg || !msg.trim()) return;
-          post('/admin/coin-engine/verified_pros/' + uid + '/request_info.json', { message: msg })
-            .then(function(){ toast('Info request sent', 'win'); })
-            .catch(function(e){ toast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
+          vpPost('/admin/coin-engine/verified_pros/' + uid + '/request_info.json', { message: msg })
+            .then(function(){ vpToast('Info request sent', 'win'); })
+            .catch(function(e){ vpToast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
           return;
         }
         var note = prompt('Optional note for the applicant (visible to them):');
         if (note === null) return; // cancelled
         btn.disabled = true;
-        post('/admin/coin-engine/verified_pros/' + uid + '/decide.json', { status: status, note: note })
+        vpPost('/admin/coin-engine/verified_pros/' + uid + '/decide.json', { status: status, note: note })
           .then(function(d){
-            toast('Decision recorded', 'win');
+            vpToast('Decision recorded', 'win');
             vpLoad(vpState.filter);
             vpLoadStats();
           })
           .catch(function(e){
-            toast((e && e.errors && e.errors[0]) || 'Failed', 'err');
+            vpToast((e && e.errors && e.errors[0]) || 'Failed', 'err');
             btn.disabled = false;
           });
       });
     });
+  }
+  // v0.10.2 - inline fetch helpers (this block lives outside the main IIFE
+  // so we can't use the get()/post()/toast() helpers defined inside it).
+  function vpCsrf(){ var m = document.querySelector('meta[name="csrf-token"]'); return m ? m.getAttribute('content') : ''; }
+  function vpGet(url){
+    return fetch(url, { credentials:'same-origin', headers:{ 'Accept':'application/json' } })
+      .then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); });
+  }
+  function vpPost(url, body){
+    return fetch(url, {
+      method:'POST', credentials:'same-origin',
+      headers:{ 'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token': vpCsrf() },
+      body: JSON.stringify(body || {})
+    }).then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); });
+  }
+  function vpToast(msg, kind){
+    var t = document.createElement('div');
+    t.className = 'ce-toast' + (kind ? ' ce-toast-' + kind : '');
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(function(){ t.classList.add('ce-toast-out'); }, 2500);
+    setTimeout(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, 3000);
   }
   function vpLoad(status){
     vpState.filter = status;
@@ -898,14 +920,14 @@
     });
     var body = document.getElementById('ce-vp-body');
     if (body) body.innerHTML = '<div class="ce-empty">Loading...</div>';
-    get('/admin/coin-engine/verified_pros.json?status=' + encodeURIComponent(status) + '&limit=100')
+    vpGet('/admin/coin-engine/verified_pros.json?status=' + encodeURIComponent(status) + '&limit=100')
       .then(function(d){ vpRender(d.records || []); })
       .catch(function(e){
         if (body) body.innerHTML = '<div class="ce-empty">Failed to load. ' + vpEsc((e && e.errors && e.errors[0]) || '') + '</div>';
       });
   }
   function vpLoadStats(){
-    get('/admin/coin-engine/verified_pros/stats.json').then(function(d){
+    vpGet('/admin/coin-engine/verified_pros/stats.json').then(function(d){
       var badge = document.getElementById('ce-vp-badge');
       if (badge && d){
         if (d.pending > 0){ badge.textContent = d.pending; badge.hidden = false; }
@@ -917,14 +939,4 @@
   document.querySelectorAll('[data-vp-filter]').forEach(function(b){
     b.addEventListener('click', function(){ vpLoad(b.getAttribute('data-vp-filter')); });
   });
-  // Auto-load stats on page boot + reload on tab activation
-  vpLoadStats();
-  document.querySelectorAll('.ce-tab[data-tab="verified_pros"]').forEach(function(t){
-    t.addEventListener('click', function(){ vpLoad(vpState.filter); });
-  });
-
-})();
-</script>
-
-</body>
-</html>
+  // Auto-load stats on page boot + re
