@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.9.0
+# version: 0.9.3
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -37,13 +37,13 @@ module ::DiscourseCoinEngine
     rescue StandardError
       nil
     end
-    # Bust the discourse-gamification leaderboard materialized view
+    # Bust the discourse-gamification leaderboard materialized view.
+    # Throttled to once per 60s — REFRESH MATERIALIZED VIEW is a full table scan
+    # and we don't want every tip/quest claim to trigger one.
     begin
-      if defined?(::DiscourseGamification::LeaderboardCachedView)
-        ::DiscourseGamification::LeaderboardCachedView.refresh
-      end
+      ::DiscourseCoinEngine.refresh_leaderboard_views!(throttle: 60)
     rescue StandardError => e
-      Rails.logger.warn("[coin_engine] LeaderboardCachedView.refresh failed: #{e.class}: #{e.message}")
+      Rails.logger.warn("[coin_engine] refresh_leaderboard_views! failed: #{e.class}: #{e.message}")
     end
     # Force the user's serializer to repaint by bumping their cache key.
     # `user.refresh_payload` doesn't exist; the canonical bust is touching the user
@@ -67,16 +67,91 @@ module ::DiscourseCoinEngine
     amt = amount.to_i
     return 0 if uid <= 0 || amt == 0
     quoted_date = ActiveRecord::Base.connection.quote(date)
-    sql = "INSERT INTO gamification_scores (user_id, date, score) " \
-          "VALUES (#{uid}, #{quoted_date}, #{amt}) " \
-          "ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score"
-    result = ActiveRecord::Base.connection.execute(sql)
+
+    # Write 1: gamification_scores (our existing ledger; what coin_engine_score reads).
+    sql1 = "INSERT INTO gamification_scores (user_id, date, score) " \
+           "VALUES (#{uid}, #{quoted_date}, #{amt}) " \
+           "ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score"
+    result = ActiveRecord::Base.connection.execute(sql1)
     n = result.respond_to?(:cmd_tuples) ? result.cmd_tuples : 1
+
+    # v0.9.3 — Write 2: gamification_leaderboard_scores (discourse-gamification's
+    # ledger that powers /leaderboard/N). Without this, our credits never reach
+    # the leaderboard UI. Mirror to ALL active leaderboards so per-category /
+    # per-period boards stay in sync.
+    begin
+      if defined?(::DiscourseGamification::GamificationLeaderboard)
+        # Pluck IDs once — cheap query, plus we don't load full records.
+        lb_ids = ::DiscourseGamification::GamificationLeaderboard.pluck(:id)
+        lb_ids.each do |lb_id|
+          sql2 = "INSERT INTO gamification_leaderboard_scores (leaderboard_id, user_id, date, score) " \
+                 "VALUES (#{lb_id.to_i}, #{uid}, #{quoted_date}, #{amt}) " \
+                 "ON CONFLICT (leaderboard_id, user_id, date) DO UPDATE SET score = gamification_leaderboard_scores.score + EXCLUDED.score"
+          ActiveRecord::Base.connection.execute(sql2)
+        end
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[coin_engine] mirror to gamification_leaderboard_scores failed: #{e.class}: #{e.message}")
+    end
+
     Rails.logger.info("[coin_engine] credit_score user=#{uid} amount=#{amt} rows=#{n}")
     n
   rescue StandardError => e
     Rails.logger.error("[coin_engine] credit_score FAILED user=#{user_id} amount=#{amount}: #{e.class}: #{e.message}")
-    raise # re-raise so the transaction rolls back; caller sees the error
+    raise
+  end
+
+  # v0.9.2 — Force-refresh discourse-gamification's materialized leaderboard
+  # views. Called from refresh_user_score on every credit, throttled so the
+  # full table scan doesn't hammer the DB. Discourse-gamification rebuilds
+  # `gamification_leaderboard_user_scores` on a schedule (sometimes daily) so
+  # the user's Top-10 / global leaderboard rank lags actual earnings without
+  # this nudge. We try the plugin's helper first (cleaner if it exists) and
+  # fall back to raw SQL if not.
+  def self.refresh_leaderboard_views!(throttle: 60)
+    last = Rails.cache.read('coin_engine_lb_refresh_at')
+    return if last && Time.now - last < throttle.to_i
+    Rails.cache.write('coin_engine_lb_refresh_at', Time.now, expires_in: 1.day)
+
+    refreshed = false
+    begin
+      if defined?(::DiscourseGamification::LeaderboardCachedView)
+        ::DiscourseGamification::LeaderboardCachedView.refresh
+        refreshed = true
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[coin_engine] LeaderboardCachedView.refresh: #{e.class}: #{e.message}")
+    end
+
+    # Discover the actual MV names. discourse-gamification creates
+    # `gamification_leaderboard_cache_{LB_ID}_{PERIOD}` per leaderboard config,
+    # so the count is N_leaderboards * 6 periods. We list them at runtime
+    # rather than hardcode — works across plugin versions.
+    begin
+      mvs = ActiveRecord::Base.connection.execute(
+        "SELECT matviewname FROM pg_matviews WHERE matviewname LIKE 'gamification_leaderboard_cache%'"
+      ).map { |r| r['matviewname'] }
+      Rails.logger.info("[coin_engine] discovered #{mvs.size} gamification leaderboard MVs to refresh")
+      mvs.each do |mv|
+        begin
+          ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY #{mv}")
+          refreshed = true
+        rescue ActiveRecord::StatementInvalid
+          # Retry without CONCURRENTLY (no unique index OR not populated yet)
+          begin
+            ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW #{mv}")
+            refreshed = true
+          rescue StandardError
+            nil
+          end
+        rescue StandardError
+          nil
+        end
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[coin_engine] MV discovery failed: #{e.class}: #{e.message}")
+    end
+    refreshed
   end
 
   def self.coin_user_total_bulk(user_ids)
@@ -167,6 +242,8 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/public_ledger_controller.rb', __FILE__)
   # v0.9.0: server-verified quest reward claims
   load File.expand_path('../app/controllers/discourse_coin_engine/quests_controller.rb', __FILE__)
+  # v0.9.1: on-demand fresh score endpoint (gamification_score = coin_engine_score, same SUM)
+  load File.expand_path('../app/controllers/discourse_coin_engine/me_controller.rb', __FILE__)
   # v0.6.0 models
   load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/tip.rb', __FILE__)
@@ -337,6 +414,9 @@ after_initialize do
     # ===== v0.9.0 Quest reward claims =====
     post '/coin-engine/quests/claim_batch.json'                      => 'discourse_coin_engine/quests#claim_batch'
     get  '/coin-engine/quests/claims.json'                           => 'discourse_coin_engine/quests#list_claims'
+
+    # ===== v0.9.1 On-demand fresh score (busts caches, no stale read) =====
+    get  '/coin-engine/me/score.json'                                => 'discourse_coin_engine/me#score'
   end
 
   # ===== Serializer enrichment =====
@@ -480,6 +560,7 @@ after_initialize do
     DiscourseCoinEngine::ThemedWeekController,
     DiscourseCoinEngine::PublicLedgerController,
     DiscourseCoinEngine::QuestsController,
+    DiscourseCoinEngine::MeController,
   ].each do |klass|
     klass.class_eval do
       rescue_from StandardError do |e|
