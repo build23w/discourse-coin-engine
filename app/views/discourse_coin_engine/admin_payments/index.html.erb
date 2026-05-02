@@ -438,10 +438,37 @@
 
   // ---------- Config from server ----------
   var SOL_MINT     = "<%= j SiteSetting.coin_engine_solana_mint_address.to_s %>";
-  var SOL_RPC      = "<%= j SiteSetting.coin_engine_solana_rpc_url.to_s %>";
+  var SOL_RPC_DEFAULT = "<%= j SiteSetting.coin_engine_solana_rpc_url.to_s %>";
   var SOL_DECIMALS = parseInt("<%= SiteSetting.coin_engine_solana_decimals.to_i %>", 10) || 9;
   var SOL_MIN      = parseInt("<%= SiteSetting.coin_engine_solana_min_send_threshold.to_i %>", 10) || 20000;
   var COIN_NAME    = "<%= j SiteSetting.coin_engine_coin_name.to_s %>";
+
+  // v0.8.4 — RPC selection. The public mainnet-beta RPC frequently 403s browser
+  // requests. Admin can paste a private RPC override (Helius/QuickNode/Triton)
+  // which we cache in localStorage so it persists across sessions. We also keep
+  // a small CORS-friendly fallback list to try automatically when the chosen
+  // RPC returns 403/429.
+  function getRpcOverride(){
+    try { return localStorage.getItem('lf_ce_admin_rpc') || ''; } catch(_){ return ''; }
+  }
+  function setRpcOverride(url){
+    try { if (url) localStorage.setItem('lf_ce_admin_rpc', url); else localStorage.removeItem('lf_ce_admin_rpc'); } catch(_){}
+  }
+  function activeRpc(){ return getRpcOverride() || SOL_RPC_DEFAULT || 'https://api.mainnet-beta.solana.com'; }
+  // Public RPCs that historically respond to browser fetches (CORS-friendly).
+  // Private/paid RPCs (Helius/QuickNode) should be set as the override above.
+  var PUBLIC_RPC_FALLBACKS = [
+    'https://solana-rpc.publicnode.com',
+    'https://rpc.ankr.com/solana',
+    'https://api.mainnet-beta.solana.com',
+  ];
+  function rpcCandidates(){
+    var seen = {}, out = [];
+    [activeRpc()].concat(PUBLIC_RPC_FALLBACKS).forEach(function(u){
+      if (u && !seen[u]){ seen[u] = 1; out.push(u); }
+    });
+    return out;
+  }
 
   function $(s, r){ return (r||document).querySelector(s); }
   function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, function(c){ return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]; }); }
@@ -498,9 +525,16 @@
     }
     if (wallet.connected && wallet.pubkey){
       var short = wallet.pubkey.slice(0,6)+'…'+wallet.pubkey.slice(-4);
+      var rpcHost = activeRpc().replace(/^https?:\/\//,'').split('/')[0];
+      var rpcOverridden = !!getRpcOverride();
       statusEl.innerHTML = '✅ Connected · <code style="background:rgba(255,255,255,.12);padding:1px 6px;border-radius:4px;font-size:12px;font-family:ui-monospace,Menlo,monospace">'+esc(short)+'</code>';
-      detailEl.textContent = 'Mint: '+SOL_MINT.slice(0,6)+'…'+SOL_MINT.slice(-4)+' · Min on-chain send: '+SOL_MIN.toLocaleString()+' '+esc(COIN_NAME)+' · RPC: '+(SOL_RPC.replace(/^https?:\/\//,'').split('/')[0]);
-      actionsEl.innerHTML = '<button class="ce-btn" id="ce-chain-disconnect" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2)">Disconnect</button>';
+      detailEl.innerHTML = 'Mint: '+SOL_MINT.slice(0,6)+'…'+SOL_MINT.slice(-4)+' · Min on-chain send: '+SOL_MIN.toLocaleString()+' '+esc(COIN_NAME)+
+        ' · RPC: <span style="color:'+(rpcOverridden?'#ffd166':'#fff')+'">'+esc(rpcHost)+'</span>'+
+        (rpcOverridden? ' <em style="font-size:10px;opacity:.7">(custom)</em>' : '');
+      actionsEl.innerHTML =
+        '<button class="ce-btn" id="ce-chain-rpc" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2)">RPC URL</button>'+
+        '<button class="ce-btn" id="ce-chain-disconnect" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2)">Disconnect</button>';
+      $('#ce-chain-rpc').addEventListener('click', editRpcOverride);
       $('#ce-chain-disconnect').addEventListener('click', function(){ clearConnection(); renderChainStatus(); injectOnChainToggle(); });
     } else {
       statusEl.textContent = 'Wallet not connected';
@@ -509,6 +543,24 @@
       $('#ce-chain-connect').addEventListener('click', connectWallet);
     }
     injectOnChainToggle();
+  }
+
+  function editRpcOverride(){
+    var current = getRpcOverride();
+    var msg = 'Enter your private Solana RPC URL.\n\n' +
+              'The public mainnet-beta RPC frequently 403s browser requests.\n' +
+              'Recommended providers (free tiers available):\n' +
+              '  • Helius — https://mainnet.helius-rpc.com/?api-key=YOUR_KEY\n' +
+              '  • QuickNode — https://YOUR-NAME.solana-mainnet.quiknode.pro/YOUR_KEY/\n' +
+              '  • Triton — https://api.rpcpool.com/YOUR_KEY/\n\n' +
+              'Leave blank to use the site setting + public fallbacks.';
+    var v = prompt(msg, current || '');
+    if (v === null) return; // cancelled
+    v = (v || '').trim();
+    if (v && !/^https?:\/\//i.test(v)){ alert('RPC URL must start with http:// or https://'); return; }
+    setRpcOverride(v);
+    toast(v ? 'Custom RPC saved' : 'Reverted to default RPC', 'win');
+    renderChainStatus();
   }
 
   async function connectWallet(){
@@ -596,11 +648,39 @@
     });
   }
 
+  // v0.8.4 — try a list of RPC URLs in sequence; the first one that successfully
+  // serves a getAccountInfo + getLatestBlockhash wins. This sidesteps the public
+  // mainnet-beta RPC's frequent 403/429 by falling through to publicnode/Ankr.
+  async function tryRpcChain(web3, fn){
+    var candidates = rpcCandidates();
+    var lastErr = null;
+    for (var i = 0; i < candidates.length; i++){
+      var url = candidates[i];
+      try {
+        var conn = new web3.Connection(url, 'confirmed');
+        var result = await fn(conn);
+        if (i > 0){ toast('RPC fallback used: '+url.replace(/^https?:\/\//,'').split('/')[0], 'info'); }
+        return { conn: conn, url: url, result: result };
+      } catch (e){
+        lastErr = e;
+        var msg = (e && e.message) || String(e);
+        console.warn('[ce-solana] RPC '+url+' failed: '+msg);
+        // Keep trying on 403/429/network failures; bail on programming errors.
+        if (!/403|429|forbidden|rate|fetch|cors|network|timeout/i.test(msg)){
+          throw e;
+        }
+      }
+    }
+    var pretty = lastErr && lastErr.message ? lastErr.message : 'unknown';
+    var err = new Error('All Solana RPCs returned errors. Last: '+pretty+'\n\nClick "RPC URL" in the on-chain banner to set a private RPC (Helius, QuickNode, Triton).');
+    err.cause = lastErr;
+    throw err;
+  }
+
   async function sendSplTransfer(recipientPubkeyStr, amount){
     var web3 = window.solanaWeb3;
     if (!web3) throw new Error('Solana web3.js not loaded -- check console for CDN load errors');
 
-    var conn = new web3.Connection(SOL_RPC, 'confirmed');
     var sender    = window.solana.publicKey;
     var recipient = new web3.PublicKey(recipientPubkeyStr);
     var mint      = new web3.PublicKey(SOL_MINT);
@@ -608,21 +688,46 @@
     var senderAta    = deriveAta(web3, sender, mint);
     var recipientAta = deriveAta(web3, recipient, mint);
 
+    // Step 1: figure out if recipient ATA exists, using fallback chain.
+    var rcptResult = await tryRpcChain(web3, async function(conn){
+      return await conn.getAccountInfo(recipientAta);
+    });
+    var workingConn = rcptResult.conn;
+    var rcptInfo = rcptResult.result;
+
     var instructions = [];
-    var rcptInfo = await conn.getAccountInfo(recipientAta);
     if (!rcptInfo){
       instructions.push(buildCreateAtaIx(web3, sender, recipientAta, recipient, mint));
     }
     var rawAmount = BigInt(amount) * (BigInt(10) ** BigInt(SOL_DECIMALS));
     instructions.push(buildSplTransferIx(web3, senderAta, recipientAta, sender, rawAmount));
 
-    var blockhash = await conn.getLatestBlockhash('confirmed');
+    // Step 2: get blockhash on the same RPC that worked above.
+    var blockhash;
+    try {
+      blockhash = await workingConn.getLatestBlockhash('confirmed');
+    } catch(e){
+      var bhResult = await tryRpcChain(web3, async function(conn){
+        return await conn.getLatestBlockhash('confirmed');
+      });
+      blockhash = bhResult.result;
+      workingConn = bhResult.conn;
+    }
+
     var tx = new web3.Transaction({ recentBlockhash: blockhash.blockhash, feePayer: sender });
     instructions.forEach(function(ix){ tx.add(ix); });
 
+    // Phantom uses its own RPC for the actual broadcast, so this works even when
+    // the browser-side RPC is 403'd. Our fallback chain only covers preflight.
     var signed = await window.solana.signAndSendTransaction(tx);
     var sig = signed.signature || signed;
-    await conn.confirmTransaction({ signature: sig, blockhash: blockhash.blockhash, lastValidBlockHeight: blockhash.lastValidBlockHeight }, 'confirmed');
+
+    // Step 3: confirm on whichever RPC is currently working.
+    try {
+      await workingConn.confirmTransaction({ signature: sig, blockhash: blockhash.blockhash, lastValidBlockHeight: blockhash.lastValidBlockHeight }, 'confirmed');
+    } catch(e){
+      console.warn('[ce-solana] confirmTransaction failed (tx may still have landed):', e && e.message);
+    }
     return sig;
   }
 
@@ -634,9 +739,7 @@
 
     btn.addEventListener('click', async function(e){
       var checkbox = document.getElementById('ce-pay-onchain');
-      if (!checkbox || !checkbox.checked) return; // backend records, no on-chain step
-      // We need to wait for the backend POST to land first, capture the payment_id, then sign.
-      // The existing handler already POSTs and handles success. We patch by intercepting fetch.
+      if (!checkbox || !checkbox.checked) return;
     }, true);
 
     // Intercept window.fetch ONLY for our specific POST so we can chain after success
@@ -652,8 +755,6 @@
               var d = await clone.json();
               if (d && d.ok && d.payment){
                 var amt = d.payment.amount;
-                // No min-amount gate on manual on-chain mints. Admin chose to mint;
-                // they bear the fee. The SOL_MIN threshold only applies to auto-payouts.
                 var username = d.payment.username || (d.payment.user && d.payment.user.username);
                 var recipientWallet = d.payment.wallet || (username ? await getRecipientWallet(username) : null);
                 if (!recipientWallet){
@@ -662,7 +763,6 @@
                 }
                 toast('Signing transaction in Phantom...', 'info');
                 var sig = await sendSplTransfer(recipientWallet, amt);
-                // Save the tx signature against the payment
                 await origFetch('/admin/coin-engine/payments/'+d.payment.id+'/tx.json', {
                   method: 'PUT', credentials: 'same-origin',
                   headers: { 'Content-Type':'application/json', 'X-CSRF-Token': (document.querySelector('meta[name=csrf-token]')||{}).getAttribute && document.querySelector('meta[name=csrf-token]').getAttribute('content') },
@@ -671,7 +771,12 @@
                 toast('✅ Minted on-chain · '+sig.slice(0,8)+'…', 'win');
               }
             } catch(err){
-              toast('On-chain mint failed: '+(err.message||err), 'err');
+              var msg = err && err.message ? err.message : String(err);
+              if (/403|forbidden|All Solana RPCs/i.test(msg)){
+                toast('RPC blocked. Click "RPC URL" in the on-chain banner to set a private RPC.', 'err');
+              } else {
+                toast('On-chain mint failed: '+msg.split('\n')[0], 'err');
+              }
               console.error('[ce-solana]', err);
             }
             return resp;
@@ -687,7 +792,6 @@
     loadStoredConnection();
     injectChainPanel();
     hookPaymentSubmit();
-    // Try to reconnect silently if Phantom was previously approved
     if (window.solana && window.solana.connect){
       window.solana.connect({ onlyIfTrusted: true }).then(function(r){
         if (r && r.publicKey){ wallet.pubkey = r.publicKey.toString(); wallet.connected = true; saveConnection(wallet.pubkey); renderChainStatus(); }

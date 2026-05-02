@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.8.3
+# version: 0.8.4
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -18,19 +18,40 @@ enabled_site_setting :coin_engine_enabled
 module ::DiscourseCoinEngine
   def self.refresh_user_score(user_id)
     return unless user_id && user_id.to_i > 0
+    uid = user_id.to_i
+    # Our own caches (5-15min TTL on serializer attrs)
     begin
-      Rails.cache.delete("coin_engine_score_user_#{user_id}")
-      Rails.cache.delete("coin_engine_rank_user_#{user_id}")
-      Rails.cache.delete("coin_engine_streak_user_#{user_id}")
+      Rails.cache.delete("coin_engine_score_user_#{uid}")
+      Rails.cache.delete("coin_engine_rank_user_#{uid}")
+      Rails.cache.delete("coin_engine_streak_user_#{uid}")
     rescue StandardError
       nil
     end
+    # discourse-gamification's internal caches. Different versions key differently;
+    # delete every variant we've seen so we work across upgrades.
+    begin
+      ['gamification_score', 'gamification:score', 'gamification:user', 'gamification_user_score'].each do |prefix|
+        Rails.cache.delete("#{prefix}:#{uid}")
+        Rails.cache.delete("#{prefix}_#{uid}")
+      end
+    rescue StandardError
+      nil
+    end
+    # Bust the discourse-gamification leaderboard materialized view
     begin
       if defined?(::DiscourseGamification::LeaderboardCachedView)
         ::DiscourseGamification::LeaderboardCachedView.refresh
       end
     rescue StandardError => e
       Rails.logger.warn("[coin_engine] LeaderboardCachedView.refresh failed: #{e.class}: #{e.message}")
+    end
+    # Force the user's serializer to repaint by bumping their cache key.
+    # `user.refresh_payload` doesn't exist; the canonical bust is touching the user
+    # so update_at changes and cache_key invalidates downstream.
+    begin
+      ::User.where(id: uid).update_all(updated_at: Time.now)
+    rescue StandardError
+      nil
     end
   end
 
@@ -118,6 +139,8 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/identity_controller.rb',   __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/governance_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/surprise_controller.rb',   __FILE__)
+  # v0.8.4: public transparency ledger
+  load File.expand_path('../app/controllers/discourse_coin_engine/public_ledger_controller.rb', __FILE__)
   # v0.6.0 models
   load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/tip.rb', __FILE__)
@@ -153,6 +176,8 @@ after_initialize do
   load File.expand_path('../lib/discourse_coin_engine/ledger_parser.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/tier_resolver.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/email_throttle.rb', __FILE__)
+  # v0.8.4: cross-feature credit notifier (PM + MessageBus push)
+  load File.expand_path('../lib/discourse_coin_engine/notifier.rb', __FILE__)
 
   # Username route constraint -- Discourse 2026.x removed User::USERNAME_ROUTE_FORMAT.
   # Inline regex matches the same characters Discourse usernames allow. The
@@ -269,6 +294,14 @@ after_initialize do
     get  '/coin-engine/surprise/auctions/:slug.json'                 => 'discourse_coin_engine/surprise#show_auction'
     post '/coin-engine/surprise/auctions/:slug/bid.json'             => 'discourse_coin_engine/surprise#bid_auction'
     get  '/coin-engine/surprise/random_airdrops.json'                => 'discourse_coin_engine/surprise#list_random_airdrops'
+
+    # ===== v0.8.4 Public transparency ledger =====
+    # Combined feed + per-event-type endpoints. Anonymous (no auth required).
+    get  '/coin-engine/ledger/recent.json'                           => 'discourse_coin_engine/public_ledger#recent'
+    get  '/coin-engine/ledger/tips.json'                             => 'discourse_coin_engine/public_ledger#tips'
+    get  '/coin-engine/ledger/bounties.json'                         => 'discourse_coin_engine/public_ledger#bounties'
+    get  '/coin-engine/ledger/votes.json'                            => 'discourse_coin_engine/public_ledger#votes'
+    get  '/coin-engine/ledger/redemptions.json'                      => 'discourse_coin_engine/public_ledger#redemptions'
   end
 
   # ===== Serializer enrichment =====
@@ -410,6 +443,7 @@ after_initialize do
     DiscourseCoinEngine::ProfileController,
     DiscourseCoinEngine::InsightsController,
     DiscourseCoinEngine::ThemedWeekController,
+    DiscourseCoinEngine::PublicLedgerController,
   ].each do |klass|
     klass.class_eval do
       rescue_from StandardError do |e|

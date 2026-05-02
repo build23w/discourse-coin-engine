@@ -26,11 +26,11 @@ module DiscourseCoinEngine
       ActiveRecord::Base.transaction do
         # Debit sender, credit recipient via gamification_scores rows.
         ts = Date.today
-        ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.connection.exec_insert(
           "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_tip_debit', [current_user.id, ts, -amount]
         )
-        ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.connection.exec_insert(
           "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_tip_credit', [recipient.id, ts, amount]
         )
@@ -45,6 +45,22 @@ module DiscourseCoinEngine
         ::DiscourseCoinEngine.refresh_user_score(current_user.id)
         ::DiscourseCoinEngine.refresh_user_score(recipient.id)
       end
+
+      # v0.8.4 — instant push + PM (out-of-transaction so a notification
+      # failure never rolls back the credit).
+      begin
+        ::DiscourseCoinEngine::Notifier.credit!(
+          recipient: recipient,
+          amount:    amount,
+          reason:    'tip',
+          sender:    current_user,
+          note:      params[:note].to_s[0, 280].presence,
+          ref:       { type: 'tip', id: tip.id, post_id: tip.post_id },
+        )
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine] tip notify failed: #{e.class}: #{e.message}")
+      end
+
       render json: { id: tip.id, amount: amount, recipient: recipient.username, status: 'sent' }
     rescue ActiveRecord::RecordInvalid => e
       render_json_error(e.record.errors.full_messages.join(', '))
@@ -79,7 +95,7 @@ module DiscourseCoinEngine
 
       red = nil
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.connection.exec_insert(
           "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_redeem_debit', [current_user.id, Date.today, -item.price]
         )
@@ -116,7 +132,7 @@ module DiscourseCoinEngine
 
       bounty = nil
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.connection.exec_insert(
           "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_bounty_lock', [current_user.id, Date.today, -amount]
         )
@@ -146,13 +162,28 @@ module DiscourseCoinEngine
       return render_json_error('winner not found', status: 404) unless winner
 
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.connection.exec_insert(
           "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_bounty_award', [winner.id, Date.today, bounty.amount]
         )
         bounty.update!(status: 'awarded', winner_user_id: winner.id, winning_post_id: post.id, awarded_at: Time.now)
         ::DiscourseCoinEngine.refresh_user_score(winner.id)
       end
+
+      # v0.8.4 — push + PM the winner.
+      begin
+        ::DiscourseCoinEngine::Notifier.credit!(
+          recipient: winner,
+          amount:    bounty.amount,
+          reason:    'bounty_award',
+          sender:    current_user,
+          note:      bounty.title.to_s[0, 280].presence,
+          ref:       { type: 'bounty', id: bounty.id, post_id: post.id },
+        )
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine] bounty notify failed: #{e.class}: #{e.message}")
+      end
+
       render json: { id: bounty.id, status: 'awarded', winner: winner.username }
     end
 
@@ -181,7 +212,7 @@ module DiscourseCoinEngine
 
       stake = nil
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.connection.exec_insert(
           "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_stake_lock', [current_user.id, Date.today, -amount]
         )
@@ -211,7 +242,7 @@ module DiscourseCoinEngine
                  stake.amount # early unlock = no bonus
                end
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
+        ActiveRecord::Base.connection.exec_insert(
           "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
           'ce_stake_payout', [current_user.id, Date.today, payout]
         )
@@ -224,7 +255,7 @@ module DiscourseCoinEngine
     # GET /coin-engine/economy/stakes.json
     def list_stakes
       stakes = Stake.where(user_id: current_user.id).order(created_at: :desc).limit(50)
-      render json: { stakes: stakes.map { |s| { id: s.id, amount: s.amount, duration_days: s.duration_days, multiplier: s.multiplier, status: s.status, unlocks_at: s.unlocks_at } } }
+      render json: { stakes: stakes.map { |s| serialize_stake(s) } }
     end
 
     private
@@ -250,6 +281,15 @@ module DiscourseCoinEngine
         status: b.status, expires_at: b.expires_at, awarded_at: b.awarded_at,
         poster: ::User.where(id: b.poster_user_id).pluck(:username).first,
         winner: b.winner_user_id ? ::User.where(id: b.winner_user_id).pluck(:username).first : nil,
+      }
+    end
+
+    def serialize_stake(s)
+      {
+        id: s.id, amount: s.amount, duration_days: s.duration_days,
+        multiplier: s.multiplier, stakes_at: s.stakes_at,
+        unlocks_at: s.unlocks_at, status: s.status,
+        rewards_paid: s.rewards_paid,
       }
     end
   end

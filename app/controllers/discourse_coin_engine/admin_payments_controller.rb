@@ -160,6 +160,24 @@ module DiscourseCoinEngine
         rescue StandardError => e
           Rails.logger.warn "[coin-engine] receipt PM failed: #{e.message}"
         end
+
+        # v0.8.4 — push to recipient's open tabs so balance + tier ring update
+        # in real time rather than waiting for the next page load.
+        begin
+          MessageBus.publish("/coin-engine/credits/#{user.id}", {
+            amount: amount.to_i,
+            reason: 'manual_payment',
+            label:  'Manual payment',
+            coin:   SiteSetting.coin_engine_coin_name,
+            new_total: ::DiscourseCoinEngine.coin_user_total(user.id),
+            sender: { id: current_user.id, username: current_user.username, name: current_user.name },
+            note:   reason.to_s.presence,
+            ref:    { type: 'payment', id: payment.id },
+            ts:     Time.now.to_i,
+          }, user_ids: [user.id])
+        rescue StandardError => e
+          Rails.logger.warn "[coin-engine] payment messagebus failed: #{e.message}"
+        end
       end
 
       render json: { ok: true, payment: serialize_payment(payment), results: results }
@@ -368,7 +386,7 @@ module DiscourseCoinEngine
       out = users.map do |u|
         p = payd[u.id] || {}
         {
-          id: u.id, username: u.username, name: u.name, email: u.email,
+          id: u.id, username: u.username, name: u.name, email: nil,
           trust_level: u.trust_level,
           score: scores[u.id] || 0,
           lifetime_received: p[:lifetime] || 0,
