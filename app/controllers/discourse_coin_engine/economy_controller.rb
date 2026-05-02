@@ -26,14 +26,8 @@ module DiscourseCoinEngine
       ActiveRecord::Base.transaction do
         # Debit sender, credit recipient via gamification_scores rows.
         ts = Date.today
-        ActiveRecord::Base.connection.exec_insert(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_tip_debit', [current_user.id, ts, -amount]
-        )
-        ActiveRecord::Base.connection.exec_insert(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_tip_credit', [recipient.id, ts, amount]
-        )
+        ::DiscourseCoinEngine.credit_score(current_user.id, ts, -amount)
+        ::DiscourseCoinEngine.credit_score(recipient.id, ts, amount)
         tip = Tip.create!(
           sender_user_id: current_user.id,
           recipient_user_id: recipient.id,
@@ -95,10 +89,7 @@ module DiscourseCoinEngine
 
       red = nil
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_insert(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_redeem_debit', [current_user.id, Date.today, -item.price]
-        )
+        ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, -item.price)
         red = Redemption.create!(
           user_id: current_user.id,
           shop_item_id: item.id,
@@ -132,10 +123,7 @@ module DiscourseCoinEngine
 
       bounty = nil
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_insert(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_bounty_lock', [current_user.id, Date.today, -amount]
-        )
+        ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, -amount)
         bounty = Bounty.create!(
           poster_user_id: current_user.id,
           topic_id: topic.id,
@@ -162,10 +150,7 @@ module DiscourseCoinEngine
       return render_json_error('winner not found', status: 404) unless winner
 
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_insert(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_bounty_award', [winner.id, Date.today, bounty.amount]
-        )
+        ::DiscourseCoinEngine.credit_score(winner.id, Date.today, bounty.amount)
         bounty.update!(status: 'awarded', winner_user_id: winner.id, winning_post_id: post.id, awarded_at: Time.now)
         ::DiscourseCoinEngine.refresh_user_score(winner.id)
       end
@@ -212,10 +197,7 @@ module DiscourseCoinEngine
 
       stake = nil
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_insert(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_stake_lock', [current_user.id, Date.today, -amount]
-        )
+        ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, -amount)
         stake = Stake.create!(
           user_id: current_user.id,
           amount: amount,
@@ -242,10 +224,7 @@ module DiscourseCoinEngine
                  stake.amount # early unlock = no bonus
                end
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_insert(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_stake_payout', [current_user.id, Date.today, payout]
-        )
+        ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, payout)
         stake.update!(status: stake.matured? ? 'matured' : 'early_unlocked', rewards_paid: payout - stake.amount)
         ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end

@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.8.4
+# version: 0.8.5
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -53,6 +53,30 @@ module ::DiscourseCoinEngine
     rescue StandardError
       nil
     end
+  end
+
+  # v0.8.5 — bulletproof gamification_scores credit/debit.
+  # The previous exec_query/exec_insert calls with raw value bindings silently
+  # no-op'd on this Discourse install — Tip records would commit but the
+  # gamification_scores INSERT did nothing, so recipients' scores never went up.
+  # This version uses safe value interpolation: user_id and amount are integers
+  # (.to_i'd here for defense), date is quoted via ActiveRecord. Returns the
+  # number of rows affected so callers can verify the credit landed.
+  def self.credit_score(user_id, date, amount)
+    uid = user_id.to_i
+    amt = amount.to_i
+    return 0 if uid <= 0 || amt == 0
+    quoted_date = ActiveRecord::Base.connection.quote(date)
+    sql = "INSERT INTO gamification_scores (user_id, date, score) " \
+          "VALUES (#{uid}, #{quoted_date}, #{amt}) " \
+          "ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score"
+    result = ActiveRecord::Base.connection.execute(sql)
+    n = result.respond_to?(:cmd_tuples) ? result.cmd_tuples : 1
+    Rails.logger.info("[coin_engine] credit_score user=#{uid} amount=#{amt} rows=#{n}")
+    n
+  rescue StandardError => e
+    Rails.logger.error("[coin_engine] credit_score FAILED user=#{user_id} amount=#{amount}: #{e.class}: #{e.message}")
+    raise # re-raise so the transaction rolls back; caller sees the error
   end
 
   def self.coin_user_total_bulk(user_ids)
