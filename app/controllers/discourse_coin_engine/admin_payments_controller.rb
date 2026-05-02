@@ -2,20 +2,6 @@
 
 module DiscourseCoinEngine
   class AdminPaymentsController < ::Admin::AdminController
-      # v0.7.3: this is an admin-only standalone HTML tool page. Discourse's
-      # default CSP (strict-dynamic) blocks our inline <script> and <style>
-      # because content_security_policy_nonce returns empty when layout=false.
-      # Strip CSP headers for the index/embed actions so the page actually runs.
-      before_action :relax_csp_for_admin_tool, only: [:index, :embed]
-
-      private
-      def relax_csp_for_admin_tool
-        response.headers.delete('Content-Security-Policy')
-        response.headers.delete('Content-Security-Policy-Report-Only')
-        response.headers.delete('X-Content-Security-Policy')
-      end
-      public
-
     requires_plugin DiscourseCoinEngine::PLUGIN_NAME
 
     skip_before_action :preload_json, only: [:index, :embed]

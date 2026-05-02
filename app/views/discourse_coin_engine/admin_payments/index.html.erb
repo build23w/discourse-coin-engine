@@ -22,7 +22,7 @@
       POST /admin/coin-engine/payments.json               -- create payment
       PUT  /admin/coin-engine/payments/:id/tx.json        -- attach Solana tx signature
 %>
-<style nonce="<%= content_security_policy_nonce %>">
+<style nonce="<%= csp_nonce_placeholder %>">
   .ce-admin{max-width:1200px;margin:24px auto;padding:0 20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;color:#0f1624;-webkit-font-smoothing:antialiased}
   .ce-admin a{color:#d9551f;text-decoration:none;font-weight:600}
   .ce-admin a:hover{text-decoration:underline}
@@ -215,7 +215,7 @@
   </div>
 </div>
 
-<script nonce="<%= content_security_policy_nonce %>">
+<script nonce="<%= csp_nonce_placeholder %>">
 (function(){
   if (window.__lfCEAdminLoaded) return; window.__lfCEAdminLoaded = true;
 
