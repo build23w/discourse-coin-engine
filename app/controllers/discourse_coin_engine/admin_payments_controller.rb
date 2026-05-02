@@ -30,6 +30,7 @@ module DiscourseCoinEngine
     end
 
     # GET /admin/plugins/coin-engine/users/search.json?q=foo
+    # v0.8.1: enriched response with score, trust_level, wallet, lifetime_received, available_to_send
     def search_users
       q = params[:q].to_s.strip.downcase
       return render(json: { users: [] }) if q.length < 2
@@ -38,13 +39,26 @@ module DiscourseCoinEngine
                     .where('id > 0')
                     .order(:username_lower)
                     .limit(10)
+                    .to_a
+      ids = users.map(&:id)
+      scores = ids.empty? ? {} : ::DiscourseCoinEngine.coin_user_total_bulk(ids)
+      paid   = ids.empty? ? {} : ::DiscourseCoinEngine::Payment.where(user_id: ids).where.not(status: %w[cancelled refunded failed]).group(:user_id).pluck(:user_id, Arel.sql('SUM(amount)::int')).to_h
+      wallet_field_id = (SiteSetting.coin_engine_solana_field_id rescue 1).to_i
+      wallets = ids.empty? ? {} : ::UserCustomField.where(user_id: ids, name: "user_field_#{wallet_field_id}").pluck(:user_id, :value).to_h
       render json: {
         users: users.map { |u|
+          score = scores[u.id].to_i
+          received = paid[u.id].to_i
           {
             id: u.id,
             username: u.username,
             name: u.name,
-            avatar_template: u.avatar_template
+            avatar_template: u.avatar_template,
+            trust_level: u.trust_level,
+            score: score,
+            lifetime_received: received,
+            available_to_send: [score - received, 0].max,
+            wallet: wallets[u.id],
           }
         }
       }

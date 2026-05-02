@@ -270,16 +270,16 @@
     payTimer = setTimeout(function(){
       get('/admin/coin-engine/users/search.json?q=' + encodeURIComponent(q)).then(function(d){
         var rows = (d.users || []).map(function(u){
-          return '<div class="ce-ta-row" data-uid="' + u.id + '" data-uname="' + esc(u.username) + '" data-wallet="' + esc(u.wallet || '') + '"><strong>' + esc(u.username) + '</strong>' + (u.name ? ' <span style="color:#5a6573">— ' + esc(u.name) + '</span>' : '') + '<div class="ce-ta-meta">' + (u.email ? esc(u.email) + ' · ' : '') + 'TL' + (u.trust_level || 0) + ' · ' + fmtN(u.score || 0) + ' $RENO' + (u.wallet ? ' · 🔗 wallet linked' : '') + '</div></div>';
+          return '<div class="ce-ta-row" data-uid="' + u.id + '" data-uname="' + esc(u.username) + '" data-wallet="' + esc(u.wallet || '') + '" data-avail="' + (u.available_to_send || 0) + '"><strong>' + esc(u.username) + '</strong>' + (u.name ? ' <span style="color:#5a6573">— ' + esc(u.name) + '</span>' : '') + '<div class="ce-ta-meta">' + (u.email ? esc(u.email) + ' · ' : '') + 'TL' + (u.trust_level || 0) + ' · ' + fmtN(u.score || 0) + ' $RENO' + (u.wallet ? ' · 🔗 wallet linked' : '') + '</div></div>';
         }).join('');
         payTA.innerHTML = rows || '<div class="ce-ta-row" style="cursor:default;color:#8b95a3">No matches</div>';
         payTA.classList.add('is-open');
         $$('.ce-ta-row[data-uid]', payTA).forEach(function(r){
           r.addEventListener('click', function(){
-            state.selectedUser = { id: r.getAttribute('data-uid'), username: r.getAttribute('data-uname'), wallet: r.getAttribute('data-wallet') };
+            state.selectedUser = { id: r.getAttribute('data-uid'), username: r.getAttribute('data-uname'), wallet: r.getAttribute('data-wallet'), available: parseInt(r.getAttribute('data-avail') || '0', 10) };
             payQ.value = state.selectedUser.username;
             payTA.classList.remove('is-open');
-            var sel = $('#ce-pay-selected'); sel.hidden = false; sel.innerHTML = '✓ Selected: <strong>@' + esc(state.selectedUser.username) + '</strong>' + (state.selectedUser.wallet ? ' (wallet: ' + esc(state.selectedUser.wallet.slice(0,6) + '...' + state.selectedUser.wallet.slice(-4)) + ')' : ' (no wallet linked)');
+            var sel = $('#ce-pay-selected'); sel.hidden = false; sel.innerHTML = '✓ Selected: <strong>@' + esc(state.selectedUser.username) + '</strong>' + (state.selectedUser.available != null ? ' · max payable: <strong>' + fmtN(state.selectedUser.available) + '</strong>' : '') + (state.selectedUser.wallet ? ' · 🔗 wallet linked' : ' · ⚠️ no wallet linked (on-chain disabled)');
           });
         });
       });
@@ -432,7 +432,6 @@
     store private keys. SPL token transfer = create-ATA-if-missing + transfer.
 %>
 <script nonce="<%= csp_nonce_placeholder %>" src="https://unpkg.com/@solana/web3.js@1.95.5/lib/index.iife.min.js"></script>
-<script nonce="<%= csp_nonce_placeholder %>" src="https://unpkg.com/@solana/spl-token@0.4.8/lib/index.iife.min.js"></script>
 <script nonce="<%= csp_nonce_placeholder %>">
 (function(){
   if (window.__lfCESolanaLoaded) return; window.__lfCESolanaLoaded = true;
@@ -551,34 +550,79 @@
     return u && u.wallet;
   }
 
+  // SPL Token + Associated Token Account program IDs (constants on every cluster)
+  var SPL_TOKEN_PROGRAM_ID         = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+  var ASSOCIATED_TOKEN_PROGRAM_ID  = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+  var SYSTEM_PROGRAM_ID            = "11111111111111111111111111111111";
+
+  // Derive an Associated Token Account (ATA) address: PDA of [owner, TOKEN_PROGRAM, mint] under ATA_PROGRAM.
+  function deriveAta(web3, ownerPk, mintPk){
+    return web3.PublicKey.findProgramAddressSync(
+      [ownerPk.toBuffer(), new web3.PublicKey(SPL_TOKEN_PROGRAM_ID).toBuffer(), mintPk.toBuffer()],
+      new web3.PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID)
+    )[0];
+  }
+
+  // Build a "create ATA" instruction (no instruction data, accounts in fixed order).
+  function buildCreateAtaIx(web3, payer, ata, owner, mint){
+    return new web3.TransactionInstruction({
+      keys: [
+        { pubkey: payer,                                         isSigner: true,  isWritable: true  },
+        { pubkey: ata,                                           isSigner: false, isWritable: true  },
+        { pubkey: owner,                                         isSigner: false, isWritable: false },
+        { pubkey: mint,                                          isSigner: false, isWritable: false },
+        { pubkey: new web3.PublicKey(SYSTEM_PROGRAM_ID),         isSigner: false, isWritable: false },
+        { pubkey: new web3.PublicKey(SPL_TOKEN_PROGRAM_ID),      isSigner: false, isWritable: false },
+      ],
+      programId: new web3.PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID),
+      data: new Uint8Array(0),
+    });
+  }
+
+  // Build SPL Transfer instruction. Layout: [3 (Transfer opcode), amount as u64 little-endian].
+  function buildSplTransferIx(web3, sourceAta, destAta, ownerPk, rawAmount){
+    var data = new Uint8Array(9);
+    data[0] = 3; // Transfer instruction discriminator
+    var view = new DataView(data.buffer);
+    view.setBigUint64(1, BigInt(rawAmount), true);
+    return new web3.TransactionInstruction({
+      keys: [
+        { pubkey: sourceAta, isSigner: false, isWritable: true  },
+        { pubkey: destAta,   isSigner: false, isWritable: true  },
+        { pubkey: ownerPk,   isSigner: true,  isWritable: false },
+      ],
+      programId: new web3.PublicKey(SPL_TOKEN_PROGRAM_ID),
+      data: data,
+    });
+  }
+
   async function sendSplTransfer(recipientPubkeyStr, amount){
     var web3 = window.solanaWeb3;
-    var spl  = window.splToken;
-    if (!web3 || !spl) throw new Error('Solana libraries not loaded');
+    if (!web3) throw new Error('Solana web3.js not loaded -- check console for CDN load errors');
 
     var conn = new web3.Connection(SOL_RPC, 'confirmed');
-    var sender = window.solana.publicKey;
+    var sender    = window.solana.publicKey;
     var recipient = new web3.PublicKey(recipientPubkeyStr);
-    var mint = new web3.PublicKey(SOL_MINT);
+    var mint      = new web3.PublicKey(SOL_MINT);
 
-    var senderAta    = await spl.getAssociatedTokenAddress(mint, sender);
-    var recipientAta = await spl.getAssociatedTokenAddress(mint, recipient);
+    var senderAta    = deriveAta(web3, sender, mint);
+    var recipientAta = deriveAta(web3, recipient, mint);
 
     var instructions = [];
     var rcptInfo = await conn.getAccountInfo(recipientAta);
     if (!rcptInfo){
-      instructions.push(spl.createAssociatedTokenAccountInstruction(sender, recipientAta, recipient, mint));
+      instructions.push(buildCreateAtaIx(web3, sender, recipientAta, recipient, mint));
     }
-    var rawAmount = BigInt(amount) * BigInt(Math.pow(10, SOL_DECIMALS));
-    instructions.push(spl.createTransferInstruction(senderAta, recipientAta, sender, rawAmount));
+    var rawAmount = BigInt(amount) * (BigInt(10) ** BigInt(SOL_DECIMALS));
+    instructions.push(buildSplTransferIx(web3, senderAta, recipientAta, sender, rawAmount));
 
     var blockhash = await conn.getLatestBlockhash('confirmed');
     var tx = new web3.Transaction({ recentBlockhash: blockhash.blockhash, feePayer: sender });
     instructions.forEach(function(ix){ tx.add(ix); });
 
     var signed = await window.solana.signAndSendTransaction(tx);
-    var sig = signed.signature || signed; // Phantom returns {signature}
-    await conn.confirmTransaction({ signature: sig, ...blockhash }, 'confirmed');
+    var sig = signed.signature || signed;
+    await conn.confirmTransaction({ signature: sig, blockhash: blockhash.blockhash, lastValidBlockHeight: blockhash.lastValidBlockHeight }, 'confirmed');
     return sig;
   }
 
@@ -608,10 +652,8 @@
               var d = await clone.json();
               if (d && d.ok && d.payment){
                 var amt = d.payment.amount;
-                if (amt < SOL_MIN){
-                  toast('Amount below min on-chain threshold ('+SOL_MIN.toLocaleString()+'). Recorded only.', 'info');
-                  return resp;
-                }
+                // No min-amount gate on manual on-chain mints. Admin chose to mint;
+                // they bear the fee. The SOL_MIN threshold only applies to auto-payouts.
                 var username = d.payment.username || (d.payment.user && d.payment.user.username);
                 var recipientWallet = d.payment.wallet || (username ? await getRecipientWallet(username) : null);
                 if (!recipientWallet){
