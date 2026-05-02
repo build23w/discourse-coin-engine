@@ -281,6 +281,8 @@ module DiscourseCoinEngine
       )
     end
     # GET /admin/coin-engine/stats.json - aggregate counts for the dashboard banner
+    public
+
     def stats
       total_distributed = ::DiscourseCoinEngine::Payment.where(status: 'sent').sum(:amount).to_i rescue 0
       payments_today    = ::DiscourseCoinEngine::Payment.where('created_at >= ?', Date.today.beginning_of_day).count rescue 0
@@ -313,6 +315,8 @@ module DiscourseCoinEngine
                  when 'paid_recent'  then 'last_paid_at DESC NULLS LAST'
                  else                     'score_total DESC NULLS LAST'
                  end
+
+    private
 
       where = "u.id > 0 AND u.staged = false AND u.suspended_till IS NULL"
       if q.length >= 1
