@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.9.3
+# version: 0.10.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -249,6 +249,9 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/tip.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/shop_item.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/bounty.rb', __FILE__)
+  # v0.10.0 — random_reach bounty support
+  load File.expand_path('../app/models/discourse_coin_engine/bounty_invitation.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/bounty_claim.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/squad.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/achievement.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/vote.rb', __FILE__)
@@ -285,6 +288,9 @@ after_initialize do
   load File.expand_path('../lib/discourse_coin_engine/notifier.rb', __FILE__)
   # v0.9.0: server-side quest validator (mirrors client catalog, enforces threshold)
   load File.expand_path('../lib/discourse_coin_engine/quest_validator.rb', __FILE__)
+  # v0.10.0: random_reach bounty dispatcher
+  load File.expand_path('../lib/discourse_coin_engine/bounty_dispatcher.rb', __FILE__)
+  load File.expand_path('../app/jobs/regular/expire_bounty_round.rb', __FILE__)
 
   # Username route constraint -- Discourse 2026.x removed User::USERNAME_ROUTE_FORMAT.
   # Inline regex matches the same characters Discourse usernames allow. The
@@ -359,6 +365,7 @@ after_initialize do
     get  '/coin-engine/economy/bounties.json'                        => 'discourse_coin_engine/economy#list_bounties'
     post '/coin-engine/economy/bounties.json'                        => 'discourse_coin_engine/economy#create_bounty'
     post '/coin-engine/economy/bounties/:id/award.json'              => 'discourse_coin_engine/economy#award_bounty', constraints: { id: %r{\d+} }
+    post '/coin-engine/economy/bounties/:id/claim.json'              => 'discourse_coin_engine/economy#claim_bounty', constraints: { id: %r{\d+} }
     get  '/coin-engine/economy/stakes.json'                          => 'discourse_coin_engine/economy#list_stakes'
     post '/coin-engine/economy/stakes.json'                          => 'discourse_coin_engine/economy#create_stake'
     post '/coin-engine/economy/stakes/:id/unstake.json'              => 'discourse_coin_engine/economy#unstake', constraints: { id: %r{\d+} }
@@ -527,6 +534,30 @@ after_initialize do
   if defined?(DiscourseEvent)
     DiscourseEvent.on(:user_promoted) do |args|
       # Reserved for tier-up email trigger.
+    end
+
+    # v0.10.0 — auto-claim random_reach bounties when an invited user replies
+    # on the bounty's topic. We check for any open random_reach bounty matching
+    # the topic + user pair and run BountyDispatcher.attempt_claim! atomically.
+    DiscourseEvent.on(:post_created) do |post, _opts, user|
+      begin
+        next unless post && user
+        next if post.user_id != user.id
+        next if post.post_number == 1  # bounty trigger requires a REPLY, not the OP
+
+        # Find any open random_reach bounty on this topic where this user is invited
+        bounty = ::DiscourseCoinEngine::Bounty
+                   .where(topic_id: post.topic_id, status: 'open', bounty_type: 'random_reach')
+                   .order(:id)
+                   .find { |b|
+                     ::DiscourseCoinEngine::BountyInvitation.exists?(bounty_id: b.id, user_id: user.id) &&
+                     !::DiscourseCoinEngine::BountyClaim.exists?(bounty_id: b.id, user_id: user.id)
+                   }
+        next unless bounty
+        ::DiscourseCoinEngine::BountyDispatcher.attempt_claim!(bounty, user, post)
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine] post_created bounty hook: #{e.class}: #{e.message}")
+      end
     end
   end
 

@@ -110,7 +110,9 @@ module DiscourseCoinEngine
     end
 
     # ===== Bounties =====
-    # POST /coin-engine/economy/bounties.json { topic_id, post_id?, amount, note?, expires_in_days? }
+    # POST /coin-engine/economy/bounties.json
+    #   { topic_id, post_id?, amount, note?, expires_in_days?,
+    #     bounty_type? (manual|random_reach), max_winners?, invite_count?, window_minutes? }
     def create_bounty
       amount = params[:amount].to_i
       return render_json_error('amount must be positive') if amount <= 0
@@ -120,6 +122,13 @@ module DiscourseCoinEngine
       topic = ::Topic.find_by(id: params[:topic_id])
       return render_json_error('topic not found', status: 404) unless topic
       expires_in = (params[:expires_in_days].presence || 7).to_i.clamp(1, 30)
+
+      # v0.10.0 — random_reach config
+      bounty_type    = (params[:bounty_type].presence || 'manual').to_s
+      bounty_type    = 'manual' unless %w[manual random_reach].include?(bounty_type)
+      max_winners    = (params[:max_winners].presence || 1).to_i.clamp(1, 50)
+      invite_count   = (params[:invite_count].presence || 5).to_i.clamp(2, 50)
+      window_minutes = (params[:window_minutes].presence || 30).to_i.clamp(5, 1440)
 
       bounty = nil
       ActiveRecord::Base.transaction do
@@ -132,10 +141,39 @@ module DiscourseCoinEngine
           status: 'open',
           expires_at: expires_in.days.from_now,
           note: params[:note].to_s[0, 1000],
+          bounty_type: bounty_type,
+          max_winners: max_winners,
+          invite_count: invite_count,
+          window_minutes: window_minutes,
         )
         ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
-      render json: { id: bounty.id, amount: amount, expires_at: bounty.expires_at }
+
+      # If random_reach, kick off round 1 (DM + MessageBus to invitees, schedule expiry job)
+      if bounty.bounty_type == 'random_reach'
+        begin
+          ::DiscourseCoinEngine::BountyDispatcher.dispatch_round!(bounty)
+        rescue StandardError => e
+          Rails.logger.warn("[coin_engine] dispatch_round! failed for bounty #{bounty.id}: #{e.message}")
+        end
+      end
+
+      render json: {
+        id: bounty.id, amount: amount, expires_at: bounty.expires_at,
+        bounty_type: bounty.bounty_type, max_winners: bounty.max_winners,
+        invite_count: bounty.invite_count, window_minutes: bounty.window_minutes
+      }
+    end
+
+    # v0.10.0 — POST /coin-engine/economy/bounties/:id/claim.json
+    # Explicit claim endpoint for random_reach bounties. Also auto-fires from
+    # the post_created DiscourseEvent hook in plugin.rb when an invited user
+    # posts a reply on the bounty topic.
+    def claim_bounty
+      bounty = Bounty.find_by(id: params[:id])
+      return render_json_error('bounty not found', status: 404) unless bounty
+      result = ::DiscourseCoinEngine::BountyDispatcher.attempt_claim!(bounty, current_user, nil)
+      render json: result, status: (result[:ok] ? 200 : 422)
     end
 
     # POST /coin-engine/economy/bounties/:id/award.json { winning_post_id }
@@ -223,6 +261,7 @@ module DiscourseCoinEngine
                else
                  stake.amount # early unlock = no bonus
                end
+
       ActiveRecord::Base.transaction do
         ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, payout)
         stake.update!(status: stake.matured? ? 'matured' : 'early_unlocked', rewards_paid: payout - stake.amount)
@@ -258,6 +297,9 @@ module DiscourseCoinEngine
       {
         id: b.id, topic_id: b.topic_id, post_id: b.post_id, amount: b.amount,
         status: b.status, expires_at: b.expires_at, awarded_at: b.awarded_at,
+        bounty_type: b.bounty_type, max_winners: b.max_winners,
+        invite_count: b.invite_count, window_minutes: b.window_minutes,
+        claims_count: b.claims_count, invitation_round: b.invitation_round,
         poster: ::User.where(id: b.poster_user_id).pluck(:username).first,
         winner: b.winner_user_id ? ::User.where(id: b.winner_user_id).pluck(:username).first : nil,
       }
