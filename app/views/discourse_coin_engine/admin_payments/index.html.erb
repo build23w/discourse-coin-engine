@@ -264,12 +264,15 @@
       $$('.ce-tab').forEach(function(x){ x.classList.remove('is-active'); });
       b.classList.add('is-active');
       var k = b.getAttribute('data-tab');
-      ['pay','recent','users','mints'].forEach(function(t){
-        $('#ce-pane-' + t).hidden = (t !== k);
+      ['pay','recent','users','mints','verified_pros'].forEach(function(t){
+        var pane = $('#ce-pane-' + t);
+        if (pane) pane.hidden = (t !== k);
       });
       if (k === 'recent' && !state.recentLoaded) loadRecent();
       if (k === 'users'  && !state.usersLoaded)  loadUsers();
       if (k === 'mints'  && !state.mintsLoaded)  loadMints();
+      // v0.10.1 — load Verified Pros on tab activation (not preloaded)
+      if (k === 'verified_pros' && typeof vpLoad === 'function') vpLoad(vpState && vpState.filter || 'pending');
     });
   });
 

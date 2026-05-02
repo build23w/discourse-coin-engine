@@ -258,22 +258,31 @@ module DiscourseCoinEngine
       Rails.logger.warn("[coin_engine] verified_pro PM failed: #{e.message}")
     end
 
-    # Public license-registry URL by state/province (best effort; admin
-    # uses these to verify externally in one click).
+    # Public license-registry URL by state/province. Accepts both code (ON/BC) and
+    # full name (Ontario/British Columbia) — applicants type either.
     def registry_link_for(state)
       key = state.to_s.upcase.strip
-      {
-        'ON'  => 'https://www.ontario.ca/page/check-licence-status-and-complaints-trade-contractor',
-        'BC'  => 'https://www.bcfsa.ca/online-services/find-licensee',
-        'AB'  => 'https://www.alberta.ca/contractor-licence-search.aspx',
-        'QC'  => 'https://www.rbq.gouv.qc.ca/citoyen/le-registre-des-detenteurs-de-licence/',
-        'CA'  => 'https://www.cslb.ca.gov/onlineservices/checklicenseii/',
-        'TX'  => 'https://www.tdlr.texas.gov/LicenseSearch/',
-        'FL'  => 'https://www.myfloridalicense.com/wl11.asp',
-        'NY'  => 'https://a836-acris.nyc.gov/CP/',
-        'WA'  => 'https://secure.lni.wa.gov/verify/',
-        'OR'  => 'https://search.ccb.state.or.us/search/',
-      }[key] || "https://www.google.com/search?q=#{CGI.escape("#{state} contractor license lookup")}"
+      direct = {
+        'ON' => 'https://www.ontario.ca/page/check-licence-status-and-complaints-trade-contractor',
+        'BC' => 'https://www.bcfsa.ca/online-services/find-licensee',
+        'AB' => 'https://www.alberta.ca/contractor-licence-search.aspx',
+        'QC' => 'https://www.rbq.gouv.qc.ca/citoyen/le-registre-des-detenteurs-de-licence/',
+        'CA' => 'https://www.cslb.ca.gov/onlineservices/checklicenseii/',
+        'TX' => 'https://www.tdlr.texas.gov/LicenseSearch/',
+        'FL' => 'https://www.myfloridalicense.com/wl11.asp',
+        'NY' => 'https://a836-acris.nyc.gov/CP/',
+        'WA' => 'https://secure.lni.wa.gov/verify/',
+        'OR' => 'https://search.ccb.state.or.us/search/',
+      }
+      # Map common full-name spellings to the codes above.
+      aliases = {
+        'ONTARIO' => 'ON', 'BRITISH COLUMBIA' => 'BC', 'ALBERTA' => 'AB',
+        'QUEBEC' => 'QC',
+        'CALIFORNIA' => 'CA', 'TEXAS' => 'TX', 'FLORIDA' => 'FL',
+        'NEW YORK' => 'NY', 'WASHINGTON' => 'WA', 'OREGON' => 'OR',
+      }
+      code = aliases[key] || key
+      direct[code] || "https://www.google.com/search?q=#{CGI.escape("#{state} contractor license lookup")}"
     end
   end
 end
