@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.8.5
+# version: 0.9.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -165,6 +165,8 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/surprise_controller.rb',   __FILE__)
   # v0.8.4: public transparency ledger
   load File.expand_path('../app/controllers/discourse_coin_engine/public_ledger_controller.rb', __FILE__)
+  # v0.9.0: server-verified quest reward claims
+  load File.expand_path('../app/controllers/discourse_coin_engine/quests_controller.rb', __FILE__)
   # v0.6.0 models
   load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/tip.rb', __FILE__)
@@ -174,6 +176,8 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/achievement.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/vote.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/daily_chest.rb', __FILE__)
+  # v0.9.0: server-verified quest reward claims
+  load File.expand_path('../app/models/discourse_coin_engine/quest_claim.rb', __FILE__)
 
   # v0.4.0: registers the sidebar link AND the modern plugin-show route. We ship
   # a connector at admin/assets/javascripts/discourse/connectors/admin-plugin-config-page-coin-engine/
@@ -202,6 +206,8 @@ after_initialize do
   load File.expand_path('../lib/discourse_coin_engine/email_throttle.rb', __FILE__)
   # v0.8.4: cross-feature credit notifier (PM + MessageBus push)
   load File.expand_path('../lib/discourse_coin_engine/notifier.rb', __FILE__)
+  # v0.9.0: server-side quest validator (mirrors client catalog, enforces threshold)
+  load File.expand_path('../lib/discourse_coin_engine/quest_validator.rb', __FILE__)
 
   # Username route constraint -- Discourse 2026.x removed User::USERNAME_ROUTE_FORMAT.
   # Inline regex matches the same characters Discourse usernames allow. The
@@ -327,6 +333,10 @@ after_initialize do
     get  '/coin-engine/ledger/votes.json'                            => 'discourse_coin_engine/public_ledger#votes'
     get  '/coin-engine/ledger/redemptions.json'                      => 'discourse_coin_engine/public_ledger#redemptions'
     get  '/coin-engine/ledger/payments.json'                         => 'discourse_coin_engine/public_ledger#payments'
+
+    # ===== v0.9.0 Quest reward claims =====
+    post '/coin-engine/quests/claim_batch.json'                      => 'discourse_coin_engine/quests#claim_batch'
+    get  '/coin-engine/quests/claims.json'                           => 'discourse_coin_engine/quests#list_claims'
   end
 
   # ===== Serializer enrichment =====
@@ -469,6 +479,7 @@ after_initialize do
     DiscourseCoinEngine::InsightsController,
     DiscourseCoinEngine::ThemedWeekController,
     DiscourseCoinEngine::PublicLedgerController,
+    DiscourseCoinEngine::QuestsController,
   ].each do |klass|
     klass.class_eval do
       rescue_from StandardError do |e|

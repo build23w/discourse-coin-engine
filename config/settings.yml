@@ -285,3 +285,9 @@ plugins:
     max: 1000000
   coin_engine_solana_auto_payouts_enabled:
     default: false
+
+  # ===== v0.9.0: Quest reward claims =====
+  coin_engine_quest_max_reno_per_day:
+    default: 50000
+    min: 0
+    max: 1000000
