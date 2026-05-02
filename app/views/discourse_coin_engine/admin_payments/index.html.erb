@@ -427,5 +427,235 @@
 })();
 </script>
 
+<%# v0.8.0 — Solana on-chain payment integration. Browser-side only:
+    admin connects Phantom wallet, signs each transfer manually. We never
+    store private keys. SPL token transfer = create-ATA-if-missing + transfer.
+%>
+<script nonce="<%= csp_nonce_placeholder %>" src="https://unpkg.com/@solana/web3.js@1.95.5/lib/index.iife.min.js"></script>
+<script nonce="<%= csp_nonce_placeholder %>" src="https://unpkg.com/@solana/spl-token@0.4.8/lib/index.iife.min.js"></script>
+<script nonce="<%= csp_nonce_placeholder %>">
+(function(){
+  if (window.__lfCESolanaLoaded) return; window.__lfCESolanaLoaded = true;
+
+  // ---------- Config from server ----------
+  var SOL_MINT     = "<%= j SiteSetting.coin_engine_solana_mint_address.to_s %>";
+  var SOL_RPC      = "<%= j SiteSetting.coin_engine_solana_rpc_url.to_s %>";
+  var SOL_DECIMALS = parseInt("<%= SiteSetting.coin_engine_solana_decimals.to_i %>", 10) || 9;
+  var SOL_MIN      = parseInt("<%= SiteSetting.coin_engine_solana_min_send_threshold.to_i %>", 10) || 20000;
+  var COIN_NAME    = "<%= j SiteSetting.coin_engine_coin_name.to_s %>";
+
+  function $(s, r){ return (r||document).querySelector(s); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, function(c){ return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]; }); }
+  function toast(m, k){ var t=document.createElement('div'); t.className='ce-toast'+(k?' ce-toast-'+k:''); t.textContent=m; document.body.appendChild(t); setTimeout(function(){t.classList.add('ce-toast-out');},2400); setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},3000); }
+
+  // ---------- Wallet state ----------
+  var wallet = { connected: false, pubkey: null };
+  function loadStoredConnection(){
+    try {
+      var saved = localStorage.getItem('lf_ce_admin_wallet');
+      if (saved){ wallet.pubkey = saved; wallet.connected = true; }
+    } catch(_){}
+  }
+  function saveConnection(pk){
+    try { localStorage.setItem('lf_ce_admin_wallet', pk); } catch(_){}
+  }
+  function clearConnection(){
+    try { localStorage.removeItem('lf_ce_admin_wallet'); } catch(_){}
+    wallet.connected = false; wallet.pubkey = null;
+  }
+
+  // ---------- Inject UI ----------
+  function injectChainPanel(){
+    if (document.getElementById('ce-chain-panel')) return;
+    var payPanel = document.getElementById('ce-pane-pay');
+    if (!payPanel) return;
+    var configured = !!SOL_MINT;
+    var html =
+      '<div id="ce-chain-panel" style="margin-bottom:18px;padding:14px;border-radius:12px;background:linear-gradient(135deg,#0f1624,#1d2a44);color:#fff;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">'+
+        '<div style="flex:1;min-width:240px">'+
+          '<div style="font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;opacity:.65;font-weight:700">⛓️ On-chain payments</div>'+
+          '<div id="ce-chain-status" style="font-size:14px;font-weight:700;margin-top:4px"></div>'+
+          '<div id="ce-chain-detail" style="font-size:11.5px;opacity:.7;margin-top:3px"></div>'+
+        '</div>'+
+        '<div id="ce-chain-actions" style="display:flex;gap:8px;flex-wrap:wrap"></div>'+
+      '</div>';
+    payPanel.insertAdjacentHTML('afterbegin', html);
+    renderChainStatus();
+  }
+  function renderChainStatus(){
+    var statusEl = $('#ce-chain-status'); var detailEl = $('#ce-chain-detail'); var actionsEl = $('#ce-chain-actions');
+    if (!statusEl) return;
+    if (!SOL_MINT){
+      statusEl.innerHTML = '⚠️ Mint address not configured';
+      detailEl.textContent = 'Set coin_engine_solana_mint_address in Site Settings to enable on-chain transfers.';
+      actionsEl.innerHTML = '<a href="/admin/site_settings/category/plugins?filter=coin_engine_solana" target="_blank" style="color:#fff;text-decoration:underline;font-size:12.5px">Configure →</a>';
+      return;
+    }
+    if (!window.solana){
+      statusEl.innerHTML = '🦊 Phantom wallet not detected';
+      detailEl.textContent = 'Install Phantom (phantom.app) to enable on-chain payments. Manual recording still works without it.';
+      actionsEl.innerHTML = '<a href="https://phantom.app" target="_blank" style="color:#fff;text-decoration:underline;font-size:12.5px">Install Phantom →</a>';
+      return;
+    }
+    if (wallet.connected && wallet.pubkey){
+      var short = wallet.pubkey.slice(0,6)+'…'+wallet.pubkey.slice(-4);
+      statusEl.innerHTML = '✅ Connected · <code style="background:rgba(255,255,255,.12);padding:1px 6px;border-radius:4px;font-size:12px;font-family:ui-monospace,Menlo,monospace">'+esc(short)+'</code>';
+      detailEl.textContent = 'Mint: '+SOL_MINT.slice(0,6)+'…'+SOL_MINT.slice(-4)+' · Min on-chain send: '+SOL_MIN.toLocaleString()+' '+esc(COIN_NAME)+' · RPC: '+(SOL_RPC.replace(/^https?:\/\//,'').split('/')[0]);
+      actionsEl.innerHTML = '<button class="ce-btn" id="ce-chain-disconnect" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2)">Disconnect</button>';
+      $('#ce-chain-disconnect').addEventListener('click', function(){ clearConnection(); renderChainStatus(); injectOnChainToggle(); });
+    } else {
+      statusEl.textContent = 'Wallet not connected';
+      detailEl.textContent = 'Connect to enable on-chain auto-mint when issuing payments. Without connection, payments still record (admins can mint manually later).';
+      actionsEl.innerHTML = '<button class="ce-btn ce-btn-primary" id="ce-chain-connect">Connect Phantom Wallet</button>';
+      $('#ce-chain-connect').addEventListener('click', connectWallet);
+    }
+    injectOnChainToggle();
+  }
+
+  async function connectWallet(){
+    if (!window.solana){ toast('Phantom not detected', 'err'); return; }
+    try {
+      var resp = await window.solana.connect();
+      var pk = resp.publicKey ? resp.publicKey.toString() : (window.solana.publicKey && window.solana.publicKey.toString());
+      if (!pk) throw new Error('No public key returned');
+      wallet.connected = true; wallet.pubkey = pk; saveConnection(pk);
+      toast('Wallet connected: '+pk.slice(0,6)+'…'+pk.slice(-4), 'win');
+      renderChainStatus();
+    } catch(e){ toast('Wallet connection rejected', 'err'); }
+  }
+
+  // ---------- "Send on-chain" toggle in Pay form ----------
+  function injectOnChainToggle(){
+    var actionsRow = document.querySelector('#ce-pane-pay .ce-toolbar:last-of-type');
+    if (!actionsRow) return;
+    var existing = document.getElementById('ce-pay-onchain-wrap');
+    if (existing) existing.remove();
+    var wrap = document.createElement('div');
+    wrap.id = 'ce-pay-onchain-wrap';
+    wrap.style.cssText = 'flex:1;display:flex;align-items:center;gap:8px;font-size:13px;color:#5a6573';
+    var disabled = !(SOL_MINT && wallet.connected && window.solana);
+    wrap.innerHTML =
+      '<label style="display:inline-flex;align-items:center;gap:8px;cursor:'+(disabled?'not-allowed':'pointer')+';opacity:'+(disabled?'.5':'1')+'">'+
+        '<input type="checkbox" id="ce-pay-onchain" '+(disabled?'disabled':'')+' style="width:16px;height:16px;cursor:'+(disabled?'not-allowed':'pointer')+'">'+
+        '<span><strong>Auto-mint on Solana</strong>'+(disabled? ' (connect wallet first)' : ' (admin signs in Phantom)')+'</span>'+
+      '</label>';
+    actionsRow.insertBefore(wrap, actionsRow.firstChild);
+  }
+
+  // ---------- SPL token transfer ----------
+  async function getRecipientWallet(username){
+    // Backend already returns wallet on the user search response. Re-fetch to be safe.
+    var r = await fetch('/admin/coin-engine/users.json?per_page=1&q='+encodeURIComponent(username), { credentials:'same-origin', headers: { 'Accept':'application/json' } });
+    var d = await r.json();
+    var u = (d.users || []).find(function(x){ return (x.username||'').toLowerCase() === username.toLowerCase(); });
+    return u && u.wallet;
+  }
+
+  async function sendSplTransfer(recipientPubkeyStr, amount){
+    var web3 = window.solanaWeb3;
+    var spl  = window.splToken;
+    if (!web3 || !spl) throw new Error('Solana libraries not loaded');
+
+    var conn = new web3.Connection(SOL_RPC, 'confirmed');
+    var sender = window.solana.publicKey;
+    var recipient = new web3.PublicKey(recipientPubkeyStr);
+    var mint = new web3.PublicKey(SOL_MINT);
+
+    var senderAta    = await spl.getAssociatedTokenAddress(mint, sender);
+    var recipientAta = await spl.getAssociatedTokenAddress(mint, recipient);
+
+    var instructions = [];
+    var rcptInfo = await conn.getAccountInfo(recipientAta);
+    if (!rcptInfo){
+      instructions.push(spl.createAssociatedTokenAccountInstruction(sender, recipientAta, recipient, mint));
+    }
+    var rawAmount = BigInt(amount) * BigInt(Math.pow(10, SOL_DECIMALS));
+    instructions.push(spl.createTransferInstruction(senderAta, recipientAta, sender, rawAmount));
+
+    var blockhash = await conn.getLatestBlockhash('confirmed');
+    var tx = new web3.Transaction({ recentBlockhash: blockhash.blockhash, feePayer: sender });
+    instructions.forEach(function(ix){ tx.add(ix); });
+
+    var signed = await window.solana.signAndSendTransaction(tx);
+    var sig = signed.signature || signed; // Phantom returns {signature}
+    await conn.confirmTransaction({ signature: sig, ...blockhash }, 'confirmed');
+    return sig;
+  }
+
+  // ---------- Hook the existing payment submit ----------
+  function hookPaymentSubmit(){
+    var btn = document.getElementById('ce-pay-submit');
+    if (!btn || btn.__lfWeb3Wrapped) return;
+    btn.__lfWeb3Wrapped = true;
+
+    btn.addEventListener('click', async function(e){
+      var checkbox = document.getElementById('ce-pay-onchain');
+      if (!checkbox || !checkbox.checked) return; // backend records, no on-chain step
+      // We need to wait for the backend POST to land first, capture the payment_id, then sign.
+      // The existing handler already POSTs and handles success. We patch by intercepting fetch.
+    }, true);
+
+    // Intercept window.fetch ONLY for our specific POST so we can chain after success
+    var origFetch = window.fetch;
+    window.fetch = function(url, opts){
+      var p = origFetch.apply(this, arguments);
+      if (url === '/admin/coin-engine/payments.json' && opts && opts.method === 'POST'){
+        var checkbox = document.getElementById('ce-pay-onchain');
+        if (checkbox && checkbox.checked && wallet.connected){
+          p = p.then(async function(resp){
+            try {
+              var clone = resp.clone();
+              var d = await clone.json();
+              if (d && d.ok && d.payment){
+                var amt = d.payment.amount;
+                if (amt < SOL_MIN){
+                  toast('Amount below min on-chain threshold ('+SOL_MIN.toLocaleString()+'). Recorded only.', 'info');
+                  return resp;
+                }
+                var username = d.payment.username || (d.payment.user && d.payment.user.username);
+                var recipientWallet = d.payment.wallet || (username ? await getRecipientWallet(username) : null);
+                if (!recipientWallet){
+                  toast('Recipient has no wallet linked. Recorded only — they can claim later.', 'info');
+                  return resp;
+                }
+                toast('Signing transaction in Phantom...', 'info');
+                var sig = await sendSplTransfer(recipientWallet, amt);
+                // Save the tx signature against the payment
+                await origFetch('/admin/coin-engine/payments/'+d.payment.id+'/tx.json', {
+                  method: 'PUT', credentials: 'same-origin',
+                  headers: { 'Content-Type':'application/json', 'X-CSRF-Token': (document.querySelector('meta[name=csrf-token]')||{}).getAttribute && document.querySelector('meta[name=csrf-token]').getAttribute('content') },
+                  body: JSON.stringify({ tx_signature: sig })
+                });
+                toast('✅ Minted on-chain · '+sig.slice(0,8)+'…', 'win');
+              }
+            } catch(err){
+              toast('On-chain mint failed: '+(err.message||err), 'err');
+              console.error('[ce-solana]', err);
+            }
+            return resp;
+          });
+        }
+      }
+      return p;
+    };
+  }
+
+  // ---------- Boot ----------
+  function boot(){
+    loadStoredConnection();
+    injectChainPanel();
+    hookPaymentSubmit();
+    // Try to reconnect silently if Phantom was previously approved
+    if (window.solana && window.solana.connect){
+      window.solana.connect({ onlyIfTrusted: true }).then(function(r){
+        if (r && r.publicKey){ wallet.pubkey = r.publicKey.toString(); wallet.connected = true; saveConnection(wallet.pubkey); renderChainStatus(); }
+      }).catch(function(){});
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else setTimeout(boot, 50);
+})();
+</script>
+
 </body>
 </html>

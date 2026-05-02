@@ -68,6 +68,15 @@ module DiscourseCoinEngine
       reason = params[:reason].to_s.strip.presence || 'Manual payment'
       raise Discourse::InvalidParameters, 'amount' if amount == 0
 
+      # v0.8.0 safety: never let payments exceed the user's earned $RENO.
+      # earned = total in gamification_scores (includes prior payment credits, but
+      # that's fine -- we're checking against future payment, not past).
+      earned = ::DiscourseCoinEngine.coin_user_total(user.id)
+      already_received = ::DiscourseCoinEngine::Payment.where(user_id: user.id).where.not(status: %w[cancelled refunded failed]).sum(:amount).to_i
+      if already_received + amount > earned
+        return render json: { errors: ["Payment would exceed user's earned $RENO. Earned: #{earned}, already received: #{already_received}, max additional: #{earned - already_received}"] }, status: 422
+      end
+
       payment = nil
       results = { score_credited: false, ledger_appended: false, email_sent: false, receipt_pm_created: false }
 

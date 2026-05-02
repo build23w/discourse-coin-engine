@@ -265,3 +265,23 @@ plugins:
     default: 25
     min: 0
     max: 100000
+
+  # ===== v0.8.0: Solana on-chain payments =====
+  coin_engine_solana_mint_address:
+    default: ""
+    client: true
+  coin_engine_solana_rpc_url:
+    default: "https://api.mainnet-beta.solana.com"
+    client: true
+  coin_engine_solana_decimals:
+    default: 9
+    client: true
+    min: 0
+    max: 12
+  coin_engine_solana_min_send_threshold:
+    default: 20000
+    client: true
+    min: 0
+    max: 1000000
+  coin_engine_solana_auto_payouts_enabled:
+    default: false
