@@ -11,7 +11,7 @@ module DiscourseCoinEngine
     # Inline JS hits the JSON endpoints below.
     def index
       respond_to do |format|
-        format.html { render layout: 'no_ember', template: 'discourse_coin_engine/admin_payments/index' }
+        format.html { render layout: false, template: 'discourse_coin_engine/admin_payments/index' }
         format.json { list_payments }
       end
     end

@@ -1,3 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>$RENO Manual Payments — <%= SiteSetting.title %></title>
+  <%= csrf_meta_tags %>
+  <style>
+    body { margin: 0; background: #f5f7fa; min-height: 100vh; }
+    a { color: #d9551f; }
+  </style>
+</head>
+<body>
 <%# v0.7.0 — Comprehensive admin payments console.
     Self-contained: inline CSS + JS so it renders cleanly inside the no_ember layout.
     Endpoints used:
@@ -413,3 +426,6 @@
   setInterval(loadStats, 60000); // refresh stats every minute
 })();
 </script>
+
+</body>
+</html>

@@ -16,7 +16,7 @@ hooks:
     - exec:
         cd: $home/plugins
         cmd:
-          - git clone https://github.com/lf-builders/discourse-coin-engine.git
+          - git clone https://github.com/build23w/discourse-coin-engine.git
 ```
 
 (Replace the URL with whichever git remote you push the plugin to.)
