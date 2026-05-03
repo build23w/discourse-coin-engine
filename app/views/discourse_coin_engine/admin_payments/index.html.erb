@@ -271,8 +271,6 @@
       if (k === 'recent' && !state.recentLoaded) loadRecent();
       if (k === 'users'  && !state.usersLoaded)  loadUsers();
       if (k === 'mints'  && !state.mintsLoaded)  loadMints();
-      // v0.10.1 — load Verified Pros on tab activation (not preloaded)
-      if (k === 'verified_pros' && typeof vpLoad === 'function') vpLoad(vpState && vpState.filter || 'pending');
     });
   });
 
@@ -749,26 +747,14 @@
   }
 
   // ---------- Hook the existing payment submit ----------
-  // v0.10.3 — per-payment-id guard prevents the tx.json PUT from firing twice
-  // for one Phantom signing. The fetch wrapper would occasionally re-trigger
-  // (Discourse retries on transient errors), and the backend's unique partial
-  // index on tx_signature crashed the second call. Now we track sealed payment
-  // IDs in a Set + dedupe sigs in-flight.
-  var __ceSealedPaymentIds = new Set();
-  var __ceTxPutInflight = new Set();
-
   function hookPaymentSubmit(){
     var btn = document.getElementById('ce-pay-submit');
     if (!btn || btn.__lfWeb3Wrapped) return;
     btn.__lfWeb3Wrapped = true;
 
-    // v0.10.3 — disable the submit button on click for 3s to absorb double-clicks.
     btn.addEventListener('click', async function(e){
       var checkbox = document.getElementById('ce-pay-onchain');
       if (!checkbox || !checkbox.checked) return;
-      if (btn.disabled) { e.preventDefault(); e.stopImmediatePropagation(); return; }
-      btn.disabled = true;
-      setTimeout(function(){ btn.disabled = false; }, 3000);
     }, true);
 
     // Intercept window.fetch ONLY for our specific POST so we can chain after success
@@ -783,48 +769,21 @@
               var clone = resp.clone();
               var d = await clone.json();
               if (d && d.ok && d.payment){
-                var paymentId = d.payment.id;
-                // Guard 1: this payment row was already minted in this session.
-                if (__ceSealedPaymentIds.has(paymentId)){
-                  console.warn('[ce-solana] payment '+paymentId+' already sealed; skipping duplicate tx PUT');
-                  return resp;
-                }
-                // Guard 2: a tx PUT for this payment is already in-flight.
-                if (__ceTxPutInflight.has(paymentId)){
-                  console.warn('[ce-solana] payment '+paymentId+' tx PUT already in-flight; skipping');
-                  return resp;
-                }
-                __ceTxPutInflight.add(paymentId);
-
                 var amt = d.payment.amount;
                 var username = d.payment.username || (d.payment.user && d.payment.user.username);
                 var recipientWallet = d.payment.wallet || (username ? await getRecipientWallet(username) : null);
                 if (!recipientWallet){
-                  __ceTxPutInflight.delete(paymentId);
                   toast('Recipient has no wallet linked. Recorded only — they can claim later.', 'info');
                   return resp;
                 }
                 toast('Signing transaction in Phantom...', 'info');
-                try {
-                  var sig = await sendSplTransfer(recipientWallet, amt);
-                  // Mark sealed BEFORE the PUT so a retry of this whole closure
-                  // won't even re-enter the sign step.
-                  __ceSealedPaymentIds.add(paymentId);
-                  var putResp = await origFetch('/admin/coin-engine/payments/'+paymentId+'/tx.json', {
-                    method: 'PUT', credentials: 'same-origin',
-                    headers: { 'Content-Type':'application/json', 'X-CSRF-Token': (document.querySelector('meta[name=csrf-token]')||{}).getAttribute && document.querySelector('meta[name=csrf-token]').getAttribute('content') },
-                    body: JSON.stringify({ tx_signature: sig })
-                  });
-                  // 200 OK includes already_set=true if the backend saw a duplicate — no error to user.
-                  if (putResp.ok){
-                    toast('✅ Minted on-chain · '+sig.slice(0,8)+'…', 'win');
-                  } else if (putResp.status === 422){
-                    var body = await putResp.json().catch(function(){ return {}; });
-                    toast((body.errors && body.errors[0]) || 'tx signature conflict — already used', 'err');
-                  }
-                } finally {
-                  __ceTxPutInflight.delete(paymentId);
-                }
+                var sig = await sendSplTransfer(recipientWallet, amt);
+                await origFetch('/admin/coin-engine/payments/'+d.payment.id+'/tx.json', {
+                  method: 'PUT', credentials: 'same-origin',
+                  headers: { 'Content-Type':'application/json', 'X-CSRF-Token': (document.querySelector('meta[name=csrf-token]')||{}).getAttribute && document.querySelector('meta[name=csrf-token]').getAttribute('content') },
+                  body: JSON.stringify({ tx_signature: sig })
+                });
+                toast('✅ Minted on-chain · '+sig.slice(0,8)+'…', 'win');
               }
             } catch(err){
               var msg = err && err.message ? err.message : String(err);
@@ -909,48 +868,26 @@
         if (act === 'info'){
           var msg = prompt('What info do you need from the applicant?');
           if (!msg || !msg.trim()) return;
-          vpPost('/admin/coin-engine/verified_pros/' + uid + '/request_info.json', { message: msg })
-            .then(function(){ vpToast('Info request sent', 'win'); })
-            .catch(function(e){ vpToast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
+          post('/admin/coin-engine/verified_pros/' + uid + '/request_info.json', { message: msg })
+            .then(function(){ toast('Info request sent', 'win'); })
+            .catch(function(e){ toast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
           return;
         }
         var note = prompt('Optional note for the applicant (visible to them):');
         if (note === null) return; // cancelled
         btn.disabled = true;
-        vpPost('/admin/coin-engine/verified_pros/' + uid + '/decide.json', { status: status, note: note })
+        post('/admin/coin-engine/verified_pros/' + uid + '/decide.json', { status: status, note: note })
           .then(function(d){
-            vpToast('Decision recorded', 'win');
+            toast('Decision recorded', 'win');
             vpLoad(vpState.filter);
             vpLoadStats();
           })
           .catch(function(e){
-            vpToast((e && e.errors && e.errors[0]) || 'Failed', 'err');
+            toast((e && e.errors && e.errors[0]) || 'Failed', 'err');
             btn.disabled = false;
           });
       });
     });
-  }
-  // v0.10.2 - inline fetch helpers (this block lives outside the main IIFE
-  // so we can't use the get()/post()/toast() helpers defined inside it).
-  function vpCsrf(){ var m = document.querySelector('meta[name="csrf-token"]'); return m ? m.getAttribute('content') : ''; }
-  function vpGet(url){
-    return fetch(url, { credentials:'same-origin', headers:{ 'Accept':'application/json' } })
-      .then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); });
-  }
-  function vpPost(url, body){
-    return fetch(url, {
-      method:'POST', credentials:'same-origin',
-      headers:{ 'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token': vpCsrf() },
-      body: JSON.stringify(body || {})
-    }).then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); });
-  }
-  function vpToast(msg, kind){
-    var t = document.createElement('div');
-    t.className = 'ce-toast' + (kind ? ' ce-toast-' + kind : '');
-    t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(function(){ t.classList.add('ce-toast-out'); }, 2500);
-    setTimeout(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, 3000);
   }
   function vpLoad(status){
     vpState.filter = status;
@@ -959,14 +896,14 @@
     });
     var body = document.getElementById('ce-vp-body');
     if (body) body.innerHTML = '<div class="ce-empty">Loading...</div>';
-    vpGet('/admin/coin-engine/verified_pros.json?status=' + encodeURIComponent(status) + '&limit=100')
+    get('/admin/coin-engine/verified_pros.json?status=' + encodeURIComponent(status) + '&limit=100')
       .then(function(d){ vpRender(d.records || []); })
       .catch(function(e){
         if (body) body.innerHTML = '<div class="ce-empty">Failed to load. ' + vpEsc((e && e.errors && e.errors[0]) || '') + '</div>';
       });
   }
   function vpLoadStats(){
-    vpGet('/admin/coin-engine/verified_pros/stats.json').then(function(d){
+    get('/admin/coin-engine/verified_pros/stats.json').then(function(d){
       var badge = document.getElementById('ce-vp-badge');
       if (badge && d){
         if (d.pending > 0){ badge.textContent = d.pending; badge.hidden = false; }
@@ -978,4 +915,14 @@
   document.querySelectorAll('[data-vp-filter]').forEach(function(b){
     b.addEventListener('click', function(){ vpLoad(b.getAttribute('data-vp-filter')); });
   });
-  // Auto-load stats on page boot + re
+  // Auto-load stats on page boot + reload on tab activation
+  vpLoadStats();
+  document.querySelectorAll('.ce-tab[data-tab="verified_pros"]').forEach(function(t){
+    t.addEventListener('click', function(){ vpLoad(vpState.filter); });
+  });
+
+})();
+</script>
+
+</body>
+</html>
