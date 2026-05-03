@@ -321,3 +321,23 @@ plugins:
     default: 1000000
     min: 1
     max: 10000000
+
+  # ===== v0.11.0: custodial wallet auto-generation =====
+  # Master switch. When false, no auto-gen happens (existing behavior).
+  coin_engine_wallet_autogen_enabled:
+    default: false
+
+  # Required before any custodial wallet can be generated. Used to derive an
+  # AES-256-GCM key (PBKDF2-SHA256, 200K iters, per-row salt). Keep this OUT of
+  # source control. If this is empty, the auto-gen job no-ops and the seed
+  # endpoint returns 503.
+  coin_engine_wallet_encryption_passphrase:
+    default: ""
+    secret: true
+
+  # Daily cap on wallet exports per user (defends against credential-theft
+  # attacker spamming the endpoint to exfiltrate keys).
+  coin_engine_wallet_export_daily_cap:
+    default: 3
+    min: 1
+    max: 10

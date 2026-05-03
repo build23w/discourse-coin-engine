@@ -295,6 +295,24 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_verified_pros_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminVerifiedProsController.layout false if defined?(DiscourseCoinEngine::AdminVerifiedProsController)
 
+  # v0.11.0: custodial wallets + withdraw requests
+  load File.expand_path('../lib/discourse_coin_engine/wallet_encryption.rb', __FILE__)
+  load File.expand_path('../lib/discourse_coin_engine/wallet_generator.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/custodial_wallet.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/withdraw_request.rb', __FILE__)
+  load File.expand_path('../app/jobs/regular/coin_engine_generate_wallet.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/wallet_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_withdraw_requests_controller.rb', __FILE__)
+  DiscourseCoinEngine::AdminWithdrawRequestsController.layout false if defined?(DiscourseCoinEngine::AdminWithdrawRequestsController)
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_wallets_controller.rb', __FILE__)
+  DiscourseCoinEngine::AdminWalletsController.layout false if defined?(DiscourseCoinEngine::AdminWalletsController)
+
+  DiscourseEvent.on(:user_created) do |user|
+    next unless (SiteSetting.coin_engine_wallet_autogen_enabled rescue false)
+    next unless user&.id
+    Jobs.enqueue_in(5.seconds, :coin_engine_generate_wallet, user_id: user.id, source: 'signup_browser')
+  end
+
   # Username route constraint -- Discourse 2026.x removed User::USERNAME_ROUTE_FORMAT.
   # Inline regex matches the same characters Discourse usernames allow. The
   # controllers also validate via User.find_by so this constraint is defense-in-depth.
@@ -329,6 +347,23 @@ after_initialize do
     get  '/admin/coin-engine/verified_pros/stats.json'               => 'discourse_coin_engine/admin_verified_pros#stats'
     post '/admin/coin-engine/verified_pros/:user_id/decide.json'        => 'discourse_coin_engine/admin_verified_pros#decide',       constraints: { user_id: %r{\d+} }
     post '/admin/coin-engine/verified_pros/:user_id/request_info.json'  => 'discourse_coin_engine/admin_verified_pros#request_info', constraints: { user_id: %r{\d+} }
+
+    # v0.11.0: Custodial wallet (user-facing) + Withdraw requests
+    post   '/coin-engine/wallet/seed.json'                           => 'discourse_coin_engine/wallet#seed'
+    get    '/coin-engine/wallet/export.json'                         => 'discourse_coin_engine/wallet#export'
+    post   '/coin-engine/wallet/withdraw_request.json'               => 'discourse_coin_engine/wallet#withdraw_request_create'
+    delete '/coin-engine/wallet/withdraw_request.json'               => 'discourse_coin_engine/wallet#withdraw_request_destroy'
+    get    '/coin-engine/wallet/withdraw_request.json'               => 'discourse_coin_engine/wallet#withdraw_request_show'
+
+    # v0.11.0: Withdraw Requests admin queue
+    get  '/admin/coin-engine/withdraw_requests.json'                       => 'discourse_coin_engine/admin_withdraw_requests#index'
+    get  '/admin/coin-engine/withdraw_requests/stats.json'                 => 'discourse_coin_engine/admin_withdraw_requests#stats'
+    post '/admin/coin-engine/withdraw_requests/:id/decide.json'            => 'discourse_coin_engine/admin_withdraw_requests#decide', constraints: { id: %r{\d+} }
+
+    # v0.11.0: Wallet backfill / admin tools
+    get  '/admin/coin-engine/wallets/status.json'                          => 'discourse_coin_engine/admin_wallets#status'
+    post '/admin/coin-engine/wallets/backfill.json'                        => 'discourse_coin_engine/admin_wallets#backfill'
+    post '/admin/coin-engine/wallets/regenerate.json'                      => 'discourse_coin_engine/admin_wallets#regenerate'
 
     # Pre-v0.4.5 alias kept alive for any in-flight bookmarks
     get  '/coin-engine/admin'                                        => 'discourse_coin_engine/admin_payments#index'

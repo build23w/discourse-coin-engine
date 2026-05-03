@@ -36,6 +36,10 @@
   .ce-stat-lbl{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#5a6573;margin-top:6px}
   .ce-stat-trend{font-size:11px;color:#0f1624;margin-top:4px;opacity:.7}
   .ce-tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid rgba(15,22,36,.08);padding-bottom:0;flex-wrap:wrap}
+  .ce-wallet-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;border-radius:12px;margin-bottom:14px;font-size:13px}
+  .ce-wallet-banner--info{background:linear-gradient(135deg,#eef5ff,#e6f0ff);border:1px solid #c4d8ef;color:#1a3a6e}
+  .ce-wallet-banner--warn{background:linear-gradient(135deg,#fff5e8,#ffe8d4);border:1px solid #f0c89a;color:#7a4a0e}
+  .ce-wallet-banner code{background:rgba(15,22,36,.08);padding:1px 5px;border-radius:4px;font-size:11.5px}
   .ce-tab{padding:10px 16px;background:transparent;border:none;color:#5a6573;font-weight:700;font-size:13.5px;cursor:pointer;border-radius:8px 8px 0 0;border-bottom:3px solid transparent;margin-bottom:-1px}
   .ce-tab:hover{background:#f7f9fc;color:#0f1624}
   .ce-tab.is-active{background:#fff;color:#d9551f;border-bottom-color:#ff6b35}
@@ -101,12 +105,23 @@
   </section>
 
   <!-- Tabs -->
+  <div id="ce-wallet-banner" class="ce-wallet-banner" hidden>
+    <div>
+      <strong id="ce-wallet-banner-title">Backfill custodial wallets</strong>
+      <div id="ce-wallet-banner-detail" style="font-size:12px;opacity:.85;margin-top:2px"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="ce-btn ce-btn-primary" id="ce-wallet-backfill" hidden>Generate now</button>
+    </div>
+  </div>
+
   <nav class="ce-tabs" id="ce-tabs">
     <button class="ce-tab is-active" data-tab="pay">💸 Pay User</button>
     <button class="ce-tab" data-tab="recent">📒 Recent Payments</button>
     <button class="ce-tab" data-tab="users">👥 All Users</button>
     <button class="ce-tab" data-tab="mints">⛓️ Pending Mints <span class="ce-badge" id="ce-mint-badge" hidden></span></button>
     <button class="ce-tab" data-tab="verified_pros">🎖 Verified Pros <span class="ce-badge" id="ce-vp-badge" hidden></span></button>
+    <button class="ce-tab" data-tab="withdraw_requests">💰 Withdraw Requests <span class="ce-badge" id="ce-wr-badge" hidden></span></button>
   </nav>
 
   <!-- Panels -->
@@ -227,6 +242,19 @@
     </div>
     <div id="ce-vp-body"><div class="ce-empty">Loading...</div></div>
   </div>
+
+  <div class="ce-panel" id="ce-pane-withdraw_requests" hidden>
+    <h2>Withdraw requests</h2>
+    <p class="ce-sub">Users with balances below the auto-payout threshold (<%= SiteSetting.coin_engine_solana_min_send_threshold rescue 20_000 %> $RENO) press <em>Request payment</em> in their FAB. Approve to mint manually via the <strong>Pay User</strong> tab; reject to dismiss.</p>
+    <div class="ce-toolbar">
+      <button class="ce-btn ce-btn-ghost" data-wr-filter="pending">Pending</button>
+      <button class="ce-btn ce-btn-ghost" data-wr-filter="approved">Approved</button>
+      <button class="ce-btn ce-btn-ghost" data-wr-filter="rejected">Rejected</button>
+      <button class="ce-btn ce-btn-ghost" data-wr-filter="cancelled">Cancelled</button>
+      <button class="ce-btn ce-btn-ghost" data-wr-filter="all">All</button>
+    </div>
+    <div id="ce-wr-body"><div class="ce-empty">Loading...</div></div>
+  </div>
 </div>
 
 <script nonce="<%= csp_nonce_placeholder %>">
@@ -264,15 +292,168 @@
       $$('.ce-tab').forEach(function(x){ x.classList.remove('is-active'); });
       b.classList.add('is-active');
       var k = b.getAttribute('data-tab');
-      ['pay','recent','users','mints','verified_pros'].forEach(function(t){
+      ['pay','recent','users','mints','verified_pros','withdraw_requests'].forEach(function(t){
         var pane = $('#ce-pane-' + t);
         if (pane) pane.hidden = (t !== k);
       });
       if (k === 'recent' && !state.recentLoaded) loadRecent();
       if (k === 'users'  && !state.usersLoaded)  loadUsers();
       if (k === 'mints'  && !state.mintsLoaded)  loadMints();
+      if (k === 'withdraw_requests') loadWithdrawRequests(wrState.filter);
     });
   });
+
+  // ---------- Withdraw Requests tab (v0.11.0) ----------
+  var wrState = { filter: 'pending' };
+  function loadWithdrawRequestStats(){
+    get('/admin/coin-engine/withdraw_requests/stats.json').then(function(d){
+      var b = $('#ce-wr-badge');
+      if (b && d && d.pending > 0){ b.hidden = false; b.textContent = d.pending; }
+    }).catch(function(){});
+  }
+  function loadWithdrawRequests(status){
+    wrState.filter = status;
+    $$('[data-wr-filter]').forEach(function(b){
+      b.classList.toggle('ce-btn-primary', b.getAttribute('data-wr-filter') === status);
+    });
+    var body = $('#ce-wr-body');
+    if (body) body.innerHTML = '<div class="ce-empty">Loading...</div>';
+    var q = (status === 'all') ? '' : ('?status=' + encodeURIComponent(status) + '&limit=100');
+    get('/admin/coin-engine/withdraw_requests.json' + q).then(function(d){
+      renderWithdrawRequests(d.records || []);
+    }).catch(function(e){
+      if (body) body.innerHTML = '<div class="ce-empty">Failed to load. ' + esc((e && e.errors && e.errors[0]) || '') + '</div>';
+    });
+  }
+  function renderWithdrawRequests(records){
+    var body = $('#ce-wr-body');
+    if (!body) return;
+    if (records.length === 0){
+      body.innerHTML = '<div class="ce-empty">No withdraw requests in this state.</div>';
+      return;
+    }
+    body.innerHTML = records.map(function(r){
+      var u = r.user || {};
+      var pillClass = ({pending:'ce-pill-sent',approved:'ce-pill-mint',rejected:'ce-pill',cancelled:'ce-pill'})[r.status] || 'ce-pill';
+      var actions = '';
+      if (r.status === 'pending'){
+        actions =
+          '<button class="ce-btn ce-btn-primary" data-wr-act="approve" data-wr-id="' + r.id + '">Approve</button>' +
+          '<button class="ce-btn" data-wr-act="reject" data-wr-id="' + r.id + '">Reject</button>' +
+          '<a class="ce-btn ce-btn-ghost" href="#pay" data-wr-payto="' + esc(u.username || '') + '" data-wr-amount="' + r.amount + '" data-wr-wallet="' + esc(r.wallet_address || '') + '">Pay now &rarr;</a>';
+      }
+      return '<div class="ce-card" style="margin-bottom:10px;padding:14px;border-radius:10px;background:#fff;border:1px solid rgba(0,0,0,.08)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">' +
+          '<div>' +
+            '<strong style="font-size:14.5px">@' + esc(u.username || '?') + '</strong>' +
+            '<span class="ce-pill ' + pillClass + '" style="margin-left:8px">' + r.status + '</span>' +
+            '<div style="font-size:11.5px;color:#5a6573;margin-top:2px">' +
+              'TL ' + (u.trust_level || 0) + '  ·  ' + (u.post_count || 0) + ' posts  ·  ' + fmtRel(r.created_at) +
+            '</div>' +
+          '</div>' +
+          '<a href="/u/' + esc(u.username || '') + '" target="_blank" style="font-size:12px">View profile &rarr;</a>' +
+        '</div>' +
+        '<div style="background:#f7f9fc;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.5">' +
+          '<div><strong>Amount:</strong> ' + fmtN(r.amount) + ' $RENO</div>' +
+          '<div><strong>Wallet:</strong> <code style="font-size:11.5px">' + esc(r.wallet_address || '—') + '</code></div>' +
+          (r.user_note ? '<div style="margin-top:6px"><strong>User note:</strong> ' + esc(r.user_note) + '</div>' : '') +
+          (r.admin_note ? '<div style="margin-top:6px"><strong>Admin note:</strong> ' + esc(r.admin_note) + '</div>' : '') +
+          (r.decided_by ? '<div style="margin-top:6px;font-size:11.5px;color:#8b95a3">Decided by @' + esc(r.decided_by.username) + ' · ' + fmtRel(r.decided_at) + '</div>' : '') +
+        '</div>' +
+        (actions ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + actions + '</div>' : '') +
+        '</div>';
+    }).join('');
+    body.querySelectorAll('[data-wr-act]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var act = btn.getAttribute('data-wr-act');
+        var id = btn.getAttribute('data-wr-id');
+        var note = prompt(act === 'approve' ? 'Optional note for the user:' : 'Reason for rejecting (visible to user):');
+        if (note === null) return;
+        btn.disabled = true;
+        post('/admin/coin-engine/withdraw_requests/' + id + '/decide.json', {
+          status: (act === 'approve' ? 'approved' : 'rejected'),
+          admin_note: note
+        }).then(function(){
+          toast('Request ' + (act === 'approve' ? 'approved' : 'rejected'), 'win');
+          loadWithdrawRequests(wrState.filter);
+          loadWithdrawRequestStats();
+        }).catch(function(e){
+          toast((e && e.errors && e.errors[0]) || 'Failed', 'err');
+          btn.disabled = false;
+        });
+      });
+    });
+    body.querySelectorAll('[data-wr-payto]').forEach(function(a){
+      a.addEventListener('click', function(e){
+        e.preventDefault();
+        var uname = a.getAttribute('data-wr-payto');
+        var amount = a.getAttribute('data-wr-amount');
+        var wallet = a.getAttribute('data-wr-wallet');
+        $$('.ce-tab[data-tab="pay"]')[0].click();
+        if (payQ){ payQ.value = uname; payQ.dispatchEvent(new Event('input')); }
+        var amt = $('#ce-pay-amount'); if (amt) amt.value = amount;
+        var ov  = $('#ce-pay-wallet'); if (ov && wallet) ov.value = wallet;
+      });
+    });
+  }
+  $$('[data-wr-filter]').forEach(function(b){
+    b.addEventListener('click', function(){ loadWithdrawRequests(b.getAttribute('data-wr-filter')); });
+  });
+  loadWithdrawRequestStats();
+
+  // ---------- Custodial wallet backfill banner (v0.11.0) ----------
+  function loadWalletStatus(){
+    get('/admin/coin-engine/wallets/status.json').then(function(d){
+      var banner = $('#ce-wallet-banner');
+      var title  = $('#ce-wallet-banner-title');
+      var detail = $('#ce-wallet-banner-detail');
+      var btn    = $('#ce-wallet-backfill');
+      if (!banner || !d) return;
+      var users = (d.users_missing == null) ? '?' : d.users_missing;
+      var custodial = (d.custodial_count == null) ? '?' : d.custodial_count;
+      if (d.passphrase_set && d.users_missing === 0){ banner.hidden = true; return; }
+      banner.hidden = false;
+      if (!d.passphrase_set){
+        banner.classList.add('ce-wallet-banner--warn');
+        banner.classList.remove('ce-wallet-banner--info');
+        title.textContent = '\u26A0\uFE0F Set the wallet encryption passphrase';
+        detail.innerHTML = 'Auto-gen and Export are disabled until <code>coin_engine_wallet_encryption_passphrase</code> is set. ' +
+          '<a href="/admin/site_settings/category/plugins?filter=coin_engine_wallet" target="_blank">Open settings &rarr;</a>';
+        btn.hidden = true;
+        return;
+      }
+      banner.classList.add('ce-wallet-banner--info');
+      banner.classList.remove('ce-wallet-banner--warn');
+      title.textContent = users + ' user' + (users === 1 ? '' : 's') + ' need a custodial wallet';
+      detail.innerHTML = fmtN(custodial) + ' custodial wallet' + (custodial === 1 ? '' : 's') + ' on file. ' +
+        'Backfill enqueues a Sidekiq job per user (50/sec). ' +
+        (d.last_backfill_at ? 'Last run: ' + fmtRel(d.last_backfill_at) + '.' : '');
+      if (users > 0){
+        btn.hidden = false; btn.disabled = false;
+        btn.textContent = users <= d.hard_cap ? ('Generate ' + fmtN(users) + ' wallets') : ('Generate ' + fmtN(d.hard_cap) + ' (cap)');
+      } else {
+        btn.hidden = true;
+      }
+    }).catch(function(){
+      var banner = $('#ce-wallet-banner'); if (banner) banner.hidden = true;
+    });
+  }
+  if ($('#ce-wallet-backfill')){
+    $('#ce-wallet-backfill').addEventListener('click', function(){
+      var btn = $('#ce-wallet-backfill');
+      if (!confirm('Enqueue wallet generation jobs now? Sidekiq will process ~50/second.')) return;
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Enqueuing...';
+      post('/admin/coin-engine/wallets/backfill.json', {}).then(function(d){
+        toast('Enqueued ' + fmtN(d.enqueued || 0) + ' wallet generation jobs.', 'win');
+        btn.textContent = '\u2713 ' + fmtN(d.enqueued || 0) + ' enqueued';
+        setTimeout(loadWalletStatus, 8000);
+      }).catch(function(e){
+        toast((e && e.errors && e.errors[0]) || 'Backfill failed.', 'err');
+        btn.disabled = false; btn.textContent = orig;
+      });
+    });
+  }
+  loadWalletStatus();
 
   var state = { selectedUser: null, recentPage: 1, usersPage: 1, recentLoaded: false, usersLoaded: false, mintsLoaded: false };
 
