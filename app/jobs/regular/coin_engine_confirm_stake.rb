@@ -11,7 +11,7 @@ module Jobs
     def execute(args)
       sid = args[:stake_id].to_i
       return if sid <= 0
-      stake = ::DiscourseCoinEngine::Stake.find_by(id: sid)
+      stake = ::DiscourseCoinEngine::SolStake.find_by(id: sid)
       return unless stake
       return unless stake.status == 'pending'
       sig = stake.stake_tx.to_s.strip

@@ -1,41 +1,20 @@
 # frozen_string_literal: true
 
-# v0.12.2 - User stakes via Phantom-signed SOL transfer to the staking
-# treasury. Stakes don't change in-platform $RENO score; they're an on-chain
-# commitment that gets recorded here for audit + UI display.
-#
-# Lifecycle:
-#   pending      -> awaiting on-chain confirmation of the stake tx
-#   active       -> verified on-chain, currently locked
-#   unstaking    -> user requested unstake, awaiting cool-down window
-#   completed    -> unstaked, returned to user (admin records the return tx)
-#   failed       -> on-chain tx never landed or didn't match
-#   cancelled    -> user/admin cancelled before payment
+# v0.12.2 / v0.12.3 - DEPRECATED stub.
+# This migration originally tried to create coin_engine_stakes for SOL staking,
+# but Phase 2 (20260430000001) already created a coin_engine_stakes table for
+# in-platform $RENO staking with a different schema. To avoid the collision,
+# SOL staking moved to a separate table: coin_engine_sol_stakes (created in
+# 20260503000006_create_coin_engine_sol_stakes.rb). This file is kept as a
+# no-op stub so the schema_migrations row for this timestamp can complete
+# cleanly on installs that already partially ran the broken migration.
 
 class CreateCoinEngineStakes < ActiveRecord::Migration[7.0]
   def up
-    create_table :coin_engine_stakes do |t|
-      t.integer  :user_id,         null: false
-      t.bigint   :amount_lamports, null: false   # SOL amount staked, in lamports
-      t.string   :wallet_address,  null: false, limit: 64
-      t.string   :stake_tx,        limit: 100              # Solana tx sig of the stake transfer
-      t.string   :unstake_tx,      limit: 100              # admin-recorded return tx
-      t.string   :status,          null: false, limit: 16, default: 'pending'
-      t.integer  :duration_days,   null: false, default: 30 # configured lock duration
-      t.datetime :locked_until                              # earliest unstake-eligible date
-      t.datetime :confirmed_at                              # when stake_tx was verified
-      t.datetime :unstaked_at                               # when admin recorded the return
-      t.text     :metadata_json
-      t.timestamps
-    end
-
-    add_index :coin_engine_stakes, :user_id
-    add_index :coin_engine_stakes, :status
-    add_index :coin_engine_stakes, [:user_id, :status]
-    add_index :coin_engine_stakes, :stake_tx, unique: true, where: "stake_tx IS NOT NULL"
+    # no-op - SOL staking lives in coin_engine_sol_stakes (next migration)
   end
 
   def down
-    drop_table :coin_engine_stakes
+    # no-op - we never owned coin_engine_stakes (Phase 2 owns it)
   end
 end
