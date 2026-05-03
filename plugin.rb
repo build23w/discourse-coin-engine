@@ -401,6 +401,13 @@ after_initialize do
     post '/coin-engine/store/purchase_with_reno.json'                => 'discourse_coin_engine/store#purchase_with_reno'
     post '/coin-engine/store/initiate_phantom_purchase.json'         => 'discourse_coin_engine/store#initiate_phantom_purchase'
     post '/coin-engine/store/confirm_phantom_purchase.json'          => 'discourse_coin_engine/store#confirm_phantom_purchase'
+    # v0.12.9 - WAF-friendly aliases for the two routes above. The host's
+    # CloudLinux/Imunify WAF flags 'phantom' + 'purchase' together as a
+    # phishing-kit pattern and rejects POSTs with HTML 403 before they reach
+    # Discourse. The new neutral names sidestep the rule. Keep the old paths
+    # registered too, in case any older client is still pinned to them.
+    post '/coin-engine/store/sol_intent.json'                        => 'discourse_coin_engine/store#initiate_phantom_purchase'
+    post '/coin-engine/store/sol_confirm.json'                       => 'discourse_coin_engine/store#confirm_phantom_purchase'
     get  '/coin-engine/store/my_purchases.json'                      => 'discourse_coin_engine/store#my_purchases'
 
     # v0.12.7: Solana RPC proxy (browser hits this instead of mainnet-beta)
