@@ -11,9 +11,14 @@ module DiscourseCoinEngine
     belongs_to :user, class_name: '::User'
     belongs_to :item, class_name: 'StoreItem', optional: true
 
-    validates :kind,     inclusion: { in: KINDS }
-    validates :currency, inclusion: { in: CURRENCIES }
-    validates :status,   inclusion: { in: STATUSES }
+    validates :kind,        inclusion: { in: KINDS }
+    validates :currency,    inclusion: { in: CURRENCIES }
+    validates :status,      inclusion: { in: STATUSES }
+    # v0.12.5 - guard the wallet_used column from oversized inputs (a 88-char
+    # private-key paste or whitespace garbage) so we get a clean 422 instead
+    # of an uncaught PG::StringDataRightTruncation.
+    validates :wallet_used, length: { maximum: 64, message: 'must be 32-44 Base58 chars' },
+                            allow_blank: true
 
     scope :recent,    -> { order(created_at: :desc) }
     scope :pending,   -> { where(status: 'pending') }

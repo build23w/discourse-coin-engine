@@ -102,9 +102,16 @@ module DiscourseCoinEngine
       Rails.logger.info("[coin_engine.wallet] withdraw_request_create user=#{current_user&.id}")
       RateLimiter.new(current_user, 'coin_engine_withdraw_request', 1, 48.hours).performed!
 
-      field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
-      wallet = (current_user.user_fields || {})[field_id.to_s].to_s.strip
-      return render json: { errors: ['Set your Solana wallet first.'] }, status: 422 if wallet.empty?
+      wallet, status_sym = ::DiscourseCoinEngine.user_solana_wallet(current_user)
+      case status_sym
+      when :unset
+        return render json: { errors: ['Set your Solana wallet first.'] }, status: 422
+      when :malformed
+        return render json: {
+          errors: ["Your linked wallet is not a valid Solana address (#{wallet.length} chars, must be 32-44 Base58). " \
+                   "Re-link via Preferences -> Profile -> Solana Wallet, or use Disconnect Phantom in the FAB."]
+        }, status: 422
+      end
 
       threshold    = (SiteSetting.coin_engine_solana_min_send_threshold rescue 20_000).to_i
       withdrawable = available_to_withdraw(current_user.id)

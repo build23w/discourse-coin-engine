@@ -16,6 +16,20 @@ enabled_site_setting :coin_engine_enabled
 # raw gamification_scores table. Wrapped in best-effort rescue so it never
 # blocks a credit even if the gamification plugin's API surface changes.
 module ::DiscourseCoinEngine
+  # v0.12.5 - Solana pubkey validation. Base58 alphabet, 32-44 chars.
+  # If a user_field somehow contains a private key (88 chars) or whitespace
+  # garbage, controllers can call this and reject with a 422 instead of
+  # crashing on a Postgres column-limit violation downstream.
+  SOLANA_PUBKEY_RE = /\A[1-9A-HJ-NP-Za-km-z]{32,44}\z/.freeze
+
+  def self.user_solana_wallet(user, field_id = nil)
+    fid = (field_id || (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1)).to_i
+    raw = ((user.user_fields || {})[fid.to_s].to_s).strip
+    return [nil, :unset] if raw.empty?
+    return [raw, :ok] if raw.match?(SOLANA_PUBKEY_RE)
+    [raw, :malformed]
+  end
+
   def self.refresh_user_score(user_id)
     return unless user_id && user_id.to_i > 0
     uid = user_id.to_i

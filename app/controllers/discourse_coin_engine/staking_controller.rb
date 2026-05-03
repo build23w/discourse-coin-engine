@@ -40,9 +40,14 @@ module DiscourseCoinEngine
         return render json: { errors: ['Staking treasury not configured. Contact a moderator.'] }, status: 503
       end
 
-      wallet = wallet_for(current_user)
-      if wallet.empty?
+      wallet, status_sym = ::DiscourseCoinEngine.user_solana_wallet(current_user)
+      case status_sym
+      when :unset
         return render json: { errors: ['Connect a Solana wallet first.'] }, status: 422
+      when :malformed
+        return render json: {
+          errors: ["Your linked wallet is not a valid Solana address (#{wallet.length} chars, must be 32-44 Base58). Re-link via Preferences."]
+        }, status: 422
       end
 
       amount = params[:amount_lamports].to_i

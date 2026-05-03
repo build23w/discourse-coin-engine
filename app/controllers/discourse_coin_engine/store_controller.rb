@@ -77,6 +77,16 @@ module DiscourseCoinEngine
         return render json: { errors: ["Not enough $RENO. You have #{avail}; this costs #{price}."] }, status: 402
       end
 
+      # v0.12.5 - validate wallet shape before hitting any INSERT (column limit
+      # is 64 chars; oversized wallet raises PG::StringDataRightTruncation,
+      # which our rescue_from doesn't catch -> 500. Reject early with 422.)
+      wallet, status_sym = ::DiscourseCoinEngine.user_solana_wallet(current_user)
+      if status_sym == :malformed
+        return render json: {
+          errors: ["Your linked wallet is not a valid Solana address. Re-link via Preferences."]
+        }, status: 422
+      end
+
       purchase = nil
       ::ActiveRecord::Base.transaction do
         # Atomic supply decrement (only if not sold out under concurrency)
@@ -100,7 +110,7 @@ module DiscourseCoinEngine
           currency:        'reno',
           amount_paid:     price,
           amount_received: 0,
-          wallet_used:     wallet_pubkey_for(current_user),
+          wallet_used:     wallet || '',
           status:          'paid',
           paid_at:         Time.zone.now,
         )
@@ -133,9 +143,14 @@ module DiscourseCoinEngine
         return render json: { errors: ['Treasury wallet not configured. Contact a moderator.'] }, status: 503
       end
 
-      wallet = wallet_pubkey_for(current_user)
-      if wallet.empty?
+      wallet, status_sym = ::DiscourseCoinEngine.user_solana_wallet(current_user)
+      case status_sym
+      when :unset
         return render json: { errors: ['Connect a wallet first (Phantom or BYO).'] }, status: 422
+      when :malformed
+        return render json: {
+          errors: ["Your linked wallet is not a valid Solana address (#{wallet.length} chars, must be 32-44 Base58). "                    "Re-link via Preferences -> Profile -> Solana Wallet, or click Disconnect Phantom in the FAB to reset."]
+        }, status: 422
       end
 
       amount_lamports = 0
