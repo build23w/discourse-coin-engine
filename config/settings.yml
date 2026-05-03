@@ -382,3 +382,9 @@ plugins:
   # fulfillment via the admin Purchases tab).
   coin_engine_nft_auto_fulfill:
     default: false
+
+  # v0.12.2: Optional separate cold wallet for staking principal. If empty,
+  # falls back to coin_engine_treasury_wallet. Recommended to be a separate
+  # wallet so staking funds never co-mingle with operational SOL.
+  coin_engine_staking_treasury:
+    default: ""

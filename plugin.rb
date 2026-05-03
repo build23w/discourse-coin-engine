@@ -312,6 +312,10 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/store_purchase.rb', __FILE__)
   load File.expand_path('../app/jobs/regular/coin_engine_confirm_phantom_purchase.rb', __FILE__)
   load File.expand_path('../app/jobs/regular/coin_engine_fulfill_store_purchase.rb', __FILE__)
+  # v0.12.2 - staking
+  load File.expand_path('../app/models/discourse_coin_engine/stake.rb', __FILE__)
+  load File.expand_path('../app/jobs/regular/coin_engine_confirm_stake.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/staking_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/store_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_store_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminStoreController.layout false if defined?(DiscourseCoinEngine::AdminStoreController)
@@ -367,6 +371,12 @@ after_initialize do
     post   '/coin-engine/wallet/request_generation.json'             => 'discourse_coin_engine/wallet#request_generation'
     post   '/coin-engine/wallet/connect_phantom.json'                => 'discourse_coin_engine/wallet#connect_phantom'
     post   '/coin-engine/wallet/disconnect_phantom.json'             => 'discourse_coin_engine/wallet#disconnect_phantom'
+
+    # v0.12.2: Staking
+    get  '/coin-engine/staking/stakes.json'           => 'discourse_coin_engine/staking#index'
+    post '/coin-engine/staking/initiate.json'         => 'discourse_coin_engine/staking#initiate'
+    post '/coin-engine/staking/confirm.json'          => 'discourse_coin_engine/staking#confirm'
+    post '/coin-engine/staking/unstake_request.json'  => 'discourse_coin_engine/staking#unstake_request'
 
     # v0.12.0: Storefront (user-facing)
     get  '/coin-engine/store/items.json'                             => 'discourse_coin_engine/store#items'

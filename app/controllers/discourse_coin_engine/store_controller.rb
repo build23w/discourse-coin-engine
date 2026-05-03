@@ -92,11 +92,6 @@ module DiscourseCoinEngine
         # Debit the user via a negative gamification_score row dated today.
         # This routes through the same credit_score helper (negative amount).
         ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, -price)
-        # v0.12.1 - bust caches + REFRESH MATERIALIZED VIEW so /leaderboard/N
-        # reflects the spend immediately. Without this the user sees their
-        # gamification_scores total drop in the FAB but the leaderboard +
-        # other endpoints stay stale until the next cache eviction.
-        ::DiscourseCoinEngine.refresh_user_score(current_user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
 
         purchase = StorePurchase.create!(
           user_id:         current_user.id,
@@ -112,6 +107,11 @@ module DiscourseCoinEngine
       end
 
       return render json: { errors: ['Sold out.'] }, status: 422 unless purchase
+
+      # v0.12.2 - REFRESH MATERIALIZED VIEW cannot run inside a transaction
+      # (Postgres aborts the tx). Call refresh AFTER the tx commits so the
+      # leaderboard MV picks up the debit without breaking the purchase.
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
 
       ::Jobs.enqueue(:coin_engine_fulfill_store_purchase, purchase_id: purchase.id) if defined?(::Jobs::CoinEngineFulfillStorePurchase)
 

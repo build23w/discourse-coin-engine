@@ -80,8 +80,9 @@ module DiscourseCoinEngine
           paid_amount: cost,
           status: 'scheduled',
         )
-        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
+      # v0.12.2 - refresh outside the tx (REFRESH MV CONCURRENTLY can't be inside)
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       render json: { id: booking.id, scheduled_at: booking.scheduled_at, cost: cost }
     end
 
@@ -131,8 +132,9 @@ module DiscourseCoinEngine
           status: 'active',
           expires_at: expires_in.days.from_now,
         )
-        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
+      # v0.12.2 - refresh outside the tx
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       render json: { id: pb.id, expires_at: pb.expires_at }
     end
 

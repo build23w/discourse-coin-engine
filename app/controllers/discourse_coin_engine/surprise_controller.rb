@@ -31,8 +31,9 @@ module DiscourseCoinEngine
           reward_type: type,
           rarity_roll: roll.round(4).to_s,
         )
-        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
+      # v0.12.2 - refresh outside the tx
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       render json: { claimed: true, amount: reward, rarity: type }
     end
 
@@ -54,9 +55,10 @@ module DiscourseCoinEngine
         # v0.12.1 - credit_score helper so leaderboard ledger gets the debit too
         ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, -cost)
         f = StreakFreeze.create!(user_id: current_user.id, freeze_date: d, cost_paid: cost)
-        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
         Rails.cache.delete("coin_engine_streak_user_#{current_user.id}")
       end
+      # v0.12.2 - refresh outside the tx
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       render json: { id: f.id, freeze_date: f.freeze_date, cost: cost }
     rescue ActiveRecord::RecordNotUnique
       render_json_error('already frozen for that date')

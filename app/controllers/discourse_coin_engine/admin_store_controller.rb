@@ -112,14 +112,17 @@ module DiscourseCoinEngine
         # If they paid in $RENO, credit it back
         if pp.currency == 'reno' && pp.amount_paid.to_i > 0
           ::DiscourseCoinEngine.credit_score(pp.user_id, Date.today, pp.amount_paid.to_i)
-          # v0.12.1 - propagate to leaderboard MV so the refunded amount shows up
-          ::DiscourseCoinEngine.refresh_user_score(pp.user_id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
+          # v0.12.2 - refresh outside the tx (REFRESH MV CONCURRENTLY can't be inside)
+          @needs_refresh_uid = pp.user_id
         end
         # Restore the supply slot if there is one
         if pp.item_id
           ::DiscourseCoinEngine::StoreItem.where(id: pp.item_id).where('sold_count > 0')
             .update_all('sold_count = sold_count - 1, updated_at = NOW()')
         end
+      end
+      if @needs_refresh_uid
+        ::DiscourseCoinEngine.refresh_user_score(@needs_refresh_uid) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
       end
       publish_credit_event(pp, label: pp.currency == 'reno' ? "Refunded #{pp.amount_paid} $RENO" : 'Purchase refunded')
       render json: { ok: true, purchase: serialize_admin_purchase(pp) }
