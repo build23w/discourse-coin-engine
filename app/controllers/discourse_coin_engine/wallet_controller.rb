@@ -244,11 +244,21 @@ module DiscourseCoinEngine
 
       field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
 
-      ::UserCustomField.upsert(
-        { user_id: current_user.id, name: "user_field_#{field_id}", value: pubkey,
-          created_at: Time.zone.now, updated_at: Time.zone.now },
-        unique_by: [:user_id, :name],
-      )
+      # v0.12.7 - The user_custom_fields table has NO unique index on
+      # (user_id, name) by default in Discourse, so UserCustomField.upsert
+      # with unique_by: [:user_id, :name] silently degrades to a plain INSERT
+      # and creates dupe rows. User#user_fields[fid] then concatenates ALL
+      # matching rows comma-separated, so a wallet that was connected 7 times
+      # comes back as "<pk>,<pk>,<pk>,...,<pk>" (336 chars) and trips the
+      # 32-44 Base58 validation downstream.
+      #
+      # Fix: delete every matching row first, then insert exactly one. This
+      # also self-heals users whose field was already corrupted by prior
+      # multi-connect activity.
+      ::ActiveRecord::Base.transaction do
+        ::UserCustomField.where(user_id: current_user.id, name: "user_field_#{field_id}").delete_all
+        ::UserCustomField.create!(user_id: current_user.id, name: "user_field_#{field_id}", value: pubkey)
+      end
 
       # Bust the user serializer cache so /u/{username}.json reflects the swap
       begin
@@ -272,11 +282,13 @@ module DiscourseCoinEngine
       return render json: { errors: ['No custodial wallet on file to fall back to. Set a wallet via Preferences instead.'] }, status: 422 unless cust
 
       field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
-      ::UserCustomField.upsert(
-        { user_id: current_user.id, name: "user_field_#{field_id}", value: cust.public_key,
-          created_at: Time.zone.now, updated_at: Time.zone.now },
-        unique_by: [:user_id, :name],
-      )
+
+      # v0.12.7 - same delete-then-insert pattern as connect_phantom; see
+      # comment there for why upsert silently dupes on user_custom_fields.
+      ::ActiveRecord::Base.transaction do
+        ::UserCustomField.where(user_id: current_user.id, name: "user_field_#{field_id}").delete_all
+        ::UserCustomField.create!(user_id: current_user.id, name: "user_field_#{field_id}", value: cust.public_key)
+      end
 
       begin
         ::User.where(id: current_user.id).update_all(updated_at: Time.zone.now)

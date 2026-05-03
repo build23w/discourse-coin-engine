@@ -181,17 +181,41 @@ module DiscourseCoinEngine
 
       raise ::Discourse::InvalidParameters, 'amount_lamports' if amount_lamports <= 0
 
-      purchase = StorePurchase.create!(
-        user_id:         current_user.id,
-        item_id:         item&.id,
-        kind:            kind,
-        currency:        'sol',
-        amount_paid:     amount_lamports,
-        amount_received: meta[:expected_reno] || 0,
-        wallet_used:     wallet,
-        status:          'pending',
-        metadata_json:   meta.to_json,
-      )
+      # v0.12.7 - dedupe abandoned pending intents. Every "Buy with SOL" /
+      # "Buy $RENO" click used to create a fresh pending row, even when the
+      # browser side never came back with a tx_signature (e.g. RPC 403,
+      # Phantom rejected, user closed the modal). Result: the inventory
+      # tab fills up with duplicate "pending" $RENO presale rows.
+      #
+      # Reuse a recent (<30 min) pending row for the same user + kind +
+      # item if one exists; refresh its amount/wallet/metadata in case the
+      # user changed the amount in the modal between clicks.
+      purchase = StorePurchase
+                   .where(user_id: current_user.id, kind: kind, status: 'pending', currency: 'sol', item_id: item&.id)
+                   .where('created_at > ?', 30.minutes.ago)
+                   .order(created_at: :desc)
+                   .first
+
+      if purchase
+        purchase.update!(
+          amount_paid:     amount_lamports,
+          amount_received: meta[:expected_reno] || 0,
+          wallet_used:     wallet,
+          metadata_json:   meta.to_json,
+        )
+      else
+        purchase = StorePurchase.create!(
+          user_id:         current_user.id,
+          item_id:         item&.id,
+          kind:            kind,
+          currency:        'sol',
+          amount_paid:     amount_lamports,
+          amount_received: meta[:expected_reno] || 0,
+          wallet_used:     wallet,
+          status:          'pending',
+          metadata_json:   meta.to_json,
+        )
+      end
 
       render json: {
         ok: true,
@@ -228,10 +252,23 @@ module DiscourseCoinEngine
     end
 
     def my_purchases
+      # v0.12.7 - opportunistic cleanup of stale pending intents (>30 min old).
+      # These are abandoned client-side flows (Phantom rejected, RPC 403, modal
+      # closed before signing) that would otherwise pollute the inventory tab
+      # with duplicate "pending" rows forever.
+      begin
+        StorePurchase
+          .where(user_id: current_user.id, status: 'pending')
+          .where('created_at < ?', 30.minutes.ago)
+          .update_all(status: 'cancelled', updated_at: Time.zone.now)
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine.store] stale-pending sweep failed: #{e.message[0,160]}")
+      end
+
       page = [params[:page].to_i, 1].max
       per  = 10
-      scope = StorePurchase.where(user_id: current_user.id).recent.limit(per).offset((page - 1) * per)
-      total = StorePurchase.where(user_id: current_user.id).count
+      scope = StorePurchase.where(user_id: current_user.id).where.not(status: 'cancelled').recent.limit(per).offset((page - 1) * per)
+      total = StorePurchase.where(user_id: current_user.id).where.not(status: 'cancelled').count
       render json: {
         purchases: scope.map(&:serialize_for_user),
         page:      page,
