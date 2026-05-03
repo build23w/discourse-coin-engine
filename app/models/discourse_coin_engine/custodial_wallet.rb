@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# v0.11.0 — AR model for coin_engine_custodial_wallets.
-# Storage of encrypted Solana secret keys. Decryption goes through
-# DiscourseCoinEngine::WalletEncryption.decrypt!(record).
-
 module DiscourseCoinEngine
   class CustodialWallet < ::ActiveRecord::Base
     self.table_name = 'coin_engine_custodial_wallets'
 
-    SOURCES = %w[signup_browser backfill_server admin_regen unknown].freeze
+    SOURCES = %w[signup_browser backfill_server admin_regen self_service unknown].freeze
 
     belongs_to :user, class_name: '::User', optional: true
 

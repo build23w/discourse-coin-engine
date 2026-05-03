@@ -354,6 +354,8 @@ after_initialize do
     post   '/coin-engine/wallet/withdraw_request.json'               => 'discourse_coin_engine/wallet#withdraw_request_create'
     delete '/coin-engine/wallet/withdraw_request.json'               => 'discourse_coin_engine/wallet#withdraw_request_destroy'
     get    '/coin-engine/wallet/withdraw_request.json'               => 'discourse_coin_engine/wallet#withdraw_request_show'
+    get    '/coin-engine/wallet/status.json'                         => 'discourse_coin_engine/wallet#status'
+    post   '/coin-engine/wallet/request_generation.json'             => 'discourse_coin_engine/wallet#request_generation'
 
     # v0.11.0: Withdraw Requests admin queue
     get  '/admin/coin-engine/withdraw_requests.json'                       => 'discourse_coin_engine/admin_withdraw_requests#index'

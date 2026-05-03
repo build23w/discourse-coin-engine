@@ -1,23 +1,5 @@
 # frozen_string_literal: true
 
-# v0.11.0 — User-facing wallet endpoints.
-#
-# POST /coin-engine/wallet/seed.json
-#   Browser-side @solana/web3.js generated a keypair on signup. We accept
-#   { public_key, secret_key } once and only when the user has no existing
-#   custodial row. Subsequent calls are 422.
-#
-# GET  /coin-engine/wallet/export.json
-#   Decrypts and returns the user's stored secret key as a JSON download.
-#   Rate-limited 3 / 24h. Increments export_count and updates exported_at.
-#
-# POST /coin-engine/wallet/withdraw_request.json
-#   Records a pending withdraw request and DMs admins. Rate-limited 1 / 48h.
-#   Requires the user's withdrawable balance >= coin_engine_solana_min_send_threshold (20K).
-#
-# DELETE /coin-engine/wallet/withdraw_request.json
-#   User cancels their own pending request.
-
 module DiscourseCoinEngine
   class WalletController < ::ApplicationController
     requires_login
@@ -32,7 +14,6 @@ module DiscourseCoinEngine
       render json: { errors: [e.message] }, status: 400
     end
 
-    # ---------- Seed (signup hook) ----------
     def seed
       params.require(:public_key)
       params.require(:secret_key)
@@ -41,17 +22,15 @@ module DiscourseCoinEngine
       seckey = params[:secret_key]
       raise ::Discourse::InvalidParameters, 'public_key' if pubkey.length < 32 || pubkey.length > 64
 
-      # secret_key arrives as a JS array of 64 ints OR a base64 string
       bytes = decode_secret_key(seckey)
       raise ::Discourse::InvalidParameters, 'secret_key must decode to 64 bytes' if bytes.bytesize != 64
 
-      # Reject if user already has a custodial row OR a non-empty wallet field
       if CustodialWallet.exists?(user_id: current_user.id, revoked_at: nil)
         return render json: { errors: ['Custodial wallet already exists'] }, status: 422
       end
 
       field_id  = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
-      existing = (current_user.user_fields || {})[field_id.to_s].to_s.strip
+      existing  = (current_user.user_fields || {})[field_id.to_s].to_s.strip
       if !existing.empty? && existing != pubkey
         return render json: { errors: ['Wallet field already populated'] }, status: 422
       end
@@ -82,7 +61,6 @@ module DiscourseCoinEngine
       render json: { errors: ['Custodial wallet already exists'] }, status: 422
     end
 
-    # ---------- Export ----------
     def export
       RateLimiter.new(current_user, 'coin_engine_wallet_export', 3, 24.hours).performed!
 
@@ -105,18 +83,19 @@ module DiscourseCoinEngine
       payload = {
         format:     'solana-keypair-array',
         publicKey:  cw.public_key,
-        secretKey:  plaintext.bytes,  # 64-int array — same format as `solana-keygen` JSON
+        secretKey:  plaintext.bytes,
         username:   current_user.username,
         exportedAt: Time.zone.now.iso8601,
-        warning:    'Keep this file secret. Anyone with these bytes controls your wallet.'
+        warning:    'Keep this file secret. Anyone with these bytes controls your wallet.',
       }
 
       filename = "wallet-#{current_user.username}-#{Time.zone.now.strftime('%Y%m%d')}.json"
       response.headers['Content-Disposition'] = %(attachment; filename="#{filename}")
       render json: payload
+    rescue RateLimiter::LimitExceeded => e
+      render json: { errors: ["Export limit reached. Try again in #{(e.available_in / 3600.0).round(1)}h."] }, status: 429
     end
 
-    # ---------- Withdraw request ----------
     def withdraw_request_create
       RateLimiter.new(current_user, 'coin_engine_withdraw_request', 1, 48.hours).performed!
 
@@ -124,13 +103,9 @@ module DiscourseCoinEngine
       wallet = (current_user.user_fields || {})[field_id.to_s].to_s.strip
       return render json: { errors: ['Set your Solana wallet first.'] }, status: 422 if wallet.empty?
 
-      threshold = (SiteSetting.coin_engine_solana_min_send_threshold rescue 20_000).to_i
+      threshold    = (SiteSetting.coin_engine_solana_min_send_threshold rescue 20_000).to_i
       withdrawable = available_to_withdraw(current_user.id)
-
-      # No minimum-balance gate for the *request* itself (the whole point is that
-      # users below threshold are the ones who need to ping a mod), but we DO
-      # snapshot what they currently have available so the admin sees it.
-      amount = withdrawable
+      amount       = withdrawable
 
       if WithdrawRequest.exists?(user_id: current_user.id, status: 'pending')
         return render json: { errors: ['You already have a pending withdraw request.'] }, status: 422
@@ -166,13 +141,81 @@ module DiscourseCoinEngine
       render json: { request: serialize_request(wr) }
     end
 
+    def status
+      uid = current_user.id
+      field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
+      wallet_pubkey = (current_user.user_fields || {})[field_id.to_s].to_s.strip
+      cust = CustodialWallet.find_by(user_id: uid, revoked_at: nil)
+
+      total = (::DiscourseCoinEngine.respond_to?(:score_for) ? ::DiscourseCoinEngine.score_for(uid).to_i : 0) rescue 0
+      paid = begin
+        paid_sql = "SELECT COALESCE(SUM(amount),0)::bigint FROM coin_engine_payments WHERE user_id = #{uid.to_i} AND status IN ('approved','sent','on_chain')"
+        ::ActiveRecord::Base.connection.select_value(paid_sql).to_i
+      rescue StandardError
+        0
+      end
+      avail = [total - paid, 0].max
+
+      pending_wr = WithdrawRequest.where(user_id: uid, status: 'pending').order(created_at: :desc).first
+
+      autogen_enabled = (SiteSetting.coin_engine_wallet_autogen_enabled rescue false)
+      threshold       = (SiteSetting.coin_engine_solana_min_send_threshold rescue 20_000).to_i
+
+      render json: {
+        wallet: {
+          linked:       !wallet_pubkey.empty?,
+          custodial:    !!cust,
+          self_custody: !wallet_pubkey.empty? && cust.nil?,
+          public_key:   wallet_pubkey.presence,
+          source:       cust&.source,
+          exported_at:  cust&.exported_at,
+        },
+        balance: {
+          total:     total,
+          paid:      paid,
+          available: avail,
+        },
+        autogen: {
+          enabled:   !!autogen_enabled,
+          available: WalletEncryption.passphrase_set? && !!autogen_enabled,
+        },
+        withdraw_threshold: threshold,
+        pending_request:    pending_wr ? serialize_request(pending_wr) : nil,
+      }
+    end
+
+    def request_generation
+      RateLimiter.new(current_user, 'coin_engine_request_wallet_gen', 1, 5.minutes).performed!
+
+      unless WalletEncryption.passphrase_set?
+        return render json: { errors: ['Server custodial wallets are not configured. Bring your own wallet via Preferences.'] }, status: 503
+      end
+      autogen = (SiteSetting.coin_engine_wallet_autogen_enabled rescue false)
+      unless autogen
+        return render json: { errors: ['Auto-generation is disabled. Bring your own wallet via Preferences.'] }, status: 503
+      end
+
+      field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
+      existing = (current_user.user_fields || {})[field_id.to_s].to_s.strip
+      if !existing.empty?
+        return render json: { errors: ['You already have a wallet linked.'] }, status: 422
+      end
+      if CustodialWallet.exists?(user_id: current_user.id, revoked_at: nil)
+        return render json: { errors: ['A custodial wallet already exists for your account.'] }, status: 422
+      end
+
+      ::Jobs.enqueue(:coin_engine_generate_wallet, user_id: current_user.id, source: 'self_service')
+      render json: { ok: true, queued: true }
+    rescue RateLimiter::LimitExceeded => e
+      render json: { errors: ["Please wait #{e.available_in}s and try again."] }, status: 429
+    end
+
     private
 
     def decode_secret_key(seckey)
       if seckey.is_a?(Array)
         seckey.pack('C*')
       elsif seckey.is_a?(String)
-        # Try base64 first, fall back to comma-separated ints
         begin
           decoded = Base64.strict_decode64(seckey)
           return decoded if decoded.bytesize == 64
@@ -189,13 +232,8 @@ module DiscourseCoinEngine
     end
 
     def available_to_withdraw(user_id)
-      total = ::DiscourseCoinEngine.score_for(user_id)
-      paid_sql = <<~SQL
-        SELECT COALESCE(SUM(amount), 0)::bigint
-          FROM coin_engine_payments
-         WHERE user_id = #{user_id.to_i}
-           AND status IN ('approved','sent','on_chain')
-      SQL
+      total = (::DiscourseCoinEngine.respond_to?(:score_for) ? ::DiscourseCoinEngine.score_for(user_id).to_i : 0) rescue 0
+      paid_sql = "SELECT COALESCE(SUM(amount),0)::bigint FROM coin_engine_payments WHERE user_id = #{user_id.to_i} AND status IN ('approved','sent','on_chain')"
       paid = ::ActiveRecord::Base.connection.select_value(paid_sql).to_i
       [total - paid, 0].max
     rescue StandardError => e
