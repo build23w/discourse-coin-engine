@@ -341,3 +341,44 @@ plugins:
     default: 3
     min: 1
     max: 10
+
+  # ===== v0.12.0: storefront + $RENO presale =====
+  # Treasury wallet (Solana pubkey) that receives SOL from Phantom-signed
+  # purchases. REQUIRED for buy-with-SOL flows. Leave empty to disable
+  # SOL purchases entirely.
+  coin_engine_treasury_wallet:
+    default: ""
+
+  # Presale rate: how much $RENO does 1 SOL buy?
+  # e.g. 1_000_000 means 1 SOL = 1,000,000 $RENO. Used when no DEX route exists.
+  coin_engine_presale_reno_per_sol:
+    default: 1000000
+    client: true
+    min: 1
+    max: 1000000000
+
+  # Mode for the "Get more $RENO" widget:
+  #   off     - hide the widget entirely
+  #   presale - always use the fixed-rate presale flow
+  #   jupiter - try Jupiter, fall back to presale if no route
+  #   auto    - probe Jupiter on page load, pick the right flow per session
+  coin_engine_buy_reno_mode:
+    default: "presale"
+    type: enum
+    client: true
+    choices:
+      - off
+      - presale
+      - jupiter
+      - auto
+
+  # Should the FAB show the marketplace tab at all?
+  coin_engine_marketplace_enabled:
+    default: true
+    client: true
+
+  # Auto-fulfill NFT purchases via server-side signing? Requires the treasury
+  # keypair to be loaded via separate secret config. Default: false (manual
+  # fulfillment via the admin Purchases tab).
+  coin_engine_nft_auto_fulfill:
+    default: false

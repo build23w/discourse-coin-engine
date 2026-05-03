@@ -122,6 +122,7 @@
     <button class="ce-tab" data-tab="mints">⛓️ Pending Mints <span class="ce-badge" id="ce-mint-badge" hidden></span></button>
     <button class="ce-tab" data-tab="verified_pros">🎖 Verified Pros <span class="ce-badge" id="ce-vp-badge" hidden></span></button>
     <button class="ce-tab" data-tab="withdraw_requests">💰 Withdraw Requests <span class="ce-badge" id="ce-wr-badge" hidden></span></button>
+    <button class="ce-tab" data-tab="store">🛍️ Store <span class="ce-badge" id="ce-store-badge" hidden></span></button>
   </nav>
 
   <!-- Panels -->
@@ -255,6 +256,43 @@
     </div>
     <div id="ce-wr-body"><div class="ce-empty">Loading...</div></div>
   </div>
+
+  <div class="ce-panel" id="ce-pane-store" hidden>
+    <h2>Marketplace</h2>
+    <p class="ce-sub">Manage NFTs, perks, and bundles users can buy with $RENO or SOL. New items default to <em>active</em>; toggle <em>featured</em> to put them at the top of the grid.</p>
+
+    <div class="ce-toolbar">
+      <button class="ce-btn ce-btn-primary" id="ce-store-add-toggle">+ Add item</button>
+      <button class="ce-btn ce-btn-ghost" data-store-view="items">Items</button>
+      <button class="ce-btn ce-btn-ghost" data-store-view="purchases">Purchases</button>
+    </div>
+
+    <div id="ce-store-add-form" hidden style="background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:10px;padding:14px;margin-bottom:12px">
+      <h3 style="margin:0 0 10px;font-size:14px">New item</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label>Name<input type="text" id="ce-store-name" class="ce-input" placeholder="OG Holder NFT"></label>
+        <label>Kind<select id="ce-store-kind" class="ce-input">
+          <option value="nft">NFT (on-chain)</option>
+          <option value="perk">Perk (custom title / badge)</option>
+          <option value="bundle">Bundle (perk + $RENO)</option>
+        </select></label>
+        <label style="grid-column:1/-1">Description<textarea id="ce-store-desc" class="ce-input" rows="2" placeholder="What does the buyer get?"></textarea></label>
+        <label>Image URL<input type="text" id="ce-store-image" class="ce-input" placeholder="https://..."></label>
+        <label>Mint address (NFT)<input type="text" id="ce-store-mint" class="ce-input" placeholder="optional Solana mint pubkey"></label>
+        <label>Price ($RENO)<input type="number" id="ce-store-pr-reno" class="ce-input" min="0" value="0"></label>
+        <label>Price (lamports)<input type="number" id="ce-store-pr-sol" class="ce-input" min="0" value="0"></label>
+        <label>Supply (0 = unlimited)<input type="number" id="ce-store-supply" class="ce-input" min="0" value="1"></label>
+        <label>Traits JSON (perks)<input type="text" id="ce-store-traits" class="ce-input" placeholder='{"title":"OG Holder"}'></label>
+        <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="ce-store-featured"> Featured</label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button class="ce-btn ce-btn-ghost" id="ce-store-cancel">Cancel</button>
+        <button class="ce-btn ce-btn-primary" id="ce-store-save">Create</button>
+      </div>
+    </div>
+
+    <div id="ce-store-body"><div class="ce-empty">Loading...</div></div>
+  </div>
 </div>
 
 <script nonce="<%= csp_nonce_placeholder %>">
@@ -292,7 +330,7 @@
       $$('.ce-tab').forEach(function(x){ x.classList.remove('is-active'); });
       b.classList.add('is-active');
       var k = b.getAttribute('data-tab');
-      ['pay','recent','users','mints','verified_pros','withdraw_requests'].forEach(function(t){
+      ['pay','recent','users','mints','verified_pros','withdraw_requests','store'].forEach(function(t){
         var pane = $('#ce-pane-' + t);
         if (pane) pane.hidden = (t !== k);
       });
@@ -300,6 +338,7 @@
       if (k === 'users'  && !state.usersLoaded)  loadUsers();
       if (k === 'mints'  && !state.mintsLoaded)  loadMints();
       if (k === 'withdraw_requests') loadWithdrawRequests(wrState.filter);
+      if (k === 'store') loadStoreItems();
     });
   });
 
@@ -377,6 +416,152 @@
           toast('Request ' + (act === 'approve' ? 'approved' : 'rejected'), 'win');
           loadWithdrawRequests(wrState.filter);
           loadWithdrawRequestStats();
+
+  // ---------- Store admin (v0.12.0) ----------
+  var storeState = { view: 'items' };
+  function loadStoreItems(){
+    storeState.view = 'items';
+    document.querySelectorAll('[data-store-view]').forEach(function(b){
+      b.classList.toggle('ce-btn-primary', b.getAttribute('data-store-view') === 'items');
+    });
+    var body = $('#ce-store-body');
+    if (body) body.innerHTML = '<div class="ce-empty">Loading...</div>';
+    get('/admin/coin-engine/store/items.json').then(function(d){ renderStoreItems(d.items || []); })
+      .catch(function(e){ body.innerHTML = '<div class="ce-empty">Failed to load: ' + esc((e && e.errors && e.errors[0]) || '') + '</div>'; });
+  }
+  function loadStorePurchases(){
+    storeState.view = 'purchases';
+    document.querySelectorAll('[data-store-view]').forEach(function(b){
+      b.classList.toggle('ce-btn-primary', b.getAttribute('data-store-view') === 'purchases');
+    });
+    var body = $('#ce-store-body');
+    body.innerHTML = '<div class="ce-empty">Loading...</div>';
+    get('/admin/coin-engine/store/purchases.json').then(function(d){ renderStorePurchases(d.purchases || []); })
+      .catch(function(e){ body.innerHTML = '<div class="ce-empty">Failed to load: ' + esc((e && e.errors && e.errors[0]) || '') + '</div>'; });
+  }
+  function renderStoreItems(items){
+    var body = $('#ce-store-body');
+    if (!items.length){ body.innerHTML = '<div class="ce-empty">No items yet. Click <strong>+ Add item</strong> to create your first.</div>'; return; }
+    body.innerHTML = items.map(function(it){
+      var thumb = it.image_url ? '<img src="'+esc(it.image_url)+'" style="width:60px;height:60px;border-radius:8px;object-fit:cover">' : '<div style="width:60px;height:60px;border-radius:8px;background:#f7f9fc;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.4">'+(it.kind==='nft'?'🖼':'🎁')+'</div>';
+      var price = (it.price_reno > 0 ? fmtN(it.price_reno) + ' $RENO' : '') + (it.price_sol_lamports > 0 ? (it.price_reno > 0 ? ' · ' : '') + (it.price_sol_lamports / 1e9).toFixed(3) + ' SOL' : '');
+      return '<div class="ce-card" style="margin-bottom:10px;padding:12px;display:flex;gap:12px;align-items:center;background:#fff;border:1px solid rgba(0,0,0,.06);border-radius:10px">' +
+        thumb +
+        '<div style="flex:1;min-width:0">'+
+          '<strong>'+esc(it.name)+'</strong> <span class="ce-pill" style="margin-left:6px">'+esc(it.kind)+'</span>'+
+          (it.featured ? ' <span class="ce-pill ce-pill-mint">FEATURED</span>' : '')+
+          (!it.active ? ' <span class="ce-pill" style="background:#f0f1f5;color:#5a6573">INACTIVE</span>' : '')+
+          '<div style="font-size:11.5px;color:#5a6573;margin-top:2px">'+esc(price || 'Free')+(it.supply > 0 ? '  ·  '+it.sold_count+'/'+it.supply+' sold' : '  ·  unlimited')+'</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:6px">'+
+          '<button class="ce-btn ce-btn-ghost" data-store-toggle="'+it.id+'" data-store-active="'+(it.active?'1':'0')+'">'+(it.active?'Deactivate':'Activate')+'</button>'+
+          '<button class="ce-btn ce-btn-ghost" data-store-feature="'+it.id+'" data-store-featured="'+(it.featured?'1':'0')+'">'+(it.featured?'Unfeature':'Feature')+'</button>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+    body.querySelectorAll('[data-store-toggle]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var id = b.getAttribute('data-store-toggle');
+        var newActive = b.getAttribute('data-store-active') === '0';
+        put('/admin/coin-engine/store/items/' + id + '.json', { active: newActive }).then(loadStoreItems)
+          .catch(function(e){ toast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
+      });
+    });
+    body.querySelectorAll('[data-store-feature]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var id = b.getAttribute('data-store-feature');
+        var newFeat = b.getAttribute('data-store-featured') === '0';
+        put('/admin/coin-engine/store/items/' + id + '.json', { featured: newFeat }).then(loadStoreItems)
+          .catch(function(e){ toast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
+      });
+    });
+  }
+  function renderStorePurchases(purchases){
+    var body = $('#ce-store-body');
+    if (!purchases.length){ body.innerHTML = '<div class="ce-empty">No purchases yet.</div>'; return; }
+    body.innerHTML = purchases.map(function(p){
+      var u = p.user || {};
+      var item = p.item || {};
+      var price = p.currency === 'reno' ? (fmtN(p.amount_paid) + ' $RENO') : ((p.amount_paid / 1e9).toFixed(4) + ' SOL');
+      var statusPill = ({pending:'ce-pill-sent',paid:'ce-pill-mint',fulfilled:'ce-pill-mint',failed:'ce-pill',refunded:'ce-pill',cancelled:'ce-pill'})[p.status] || 'ce-pill';
+      var actions = '';
+      if (p.status === 'paid')   actions += '<button class="ce-btn ce-btn-primary" data-store-fulfill="'+p.id+'">Fulfill</button>';
+      if (p.status !== 'refunded' && p.status !== 'cancelled') actions += ' <button class="ce-btn ce-btn-ghost" data-store-refund="'+p.id+'">Refund</button>';
+      return '<div class="ce-card" style="margin-bottom:10px;padding:12px;background:#fff;border:1px solid rgba(0,0,0,.06);border-radius:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">' +
+          '<div>' +
+            '<strong>@' + esc(u.username || '?') + '</strong>' +
+            '<span class="ce-pill ' + statusPill + '" style="margin-left:6px">'+ esc(p.status) +'</span>' +
+            '<div style="font-size:11.5px;color:#5a6573;margin-top:2px">'+ esc(item.name || ('Order #' + p.id)) +' · '+ esc(price) +' · '+ fmtRel(p.created_at) +'</div>' +
+            (p.tx_signature ? '<div style="font-size:10.5px;font-family:ui-monospace,Menlo,monospace;color:#8b95a3;margin-top:2px">tx: '+ esc(p.tx_signature.slice(0,12)) +'…</div>' : '') +
+          '</div>' +
+          '<div style="display:flex;gap:6px">'+ actions +'</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    body.querySelectorAll('[data-store-fulfill]').forEach(function(b){
+      b.addEventListener('click', function(){
+        post('/admin/coin-engine/store/purchases/' + b.getAttribute('data-store-fulfill') + '/fulfill.json', {})
+          .then(function(){ toast('Marked fulfilled', 'win'); loadStorePurchases(); })
+          .catch(function(e){ toast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
+      });
+    });
+    body.querySelectorAll('[data-store-refund]').forEach(function(b){
+      b.addEventListener('click', function(){
+        if (!confirm('Refund this purchase? $RENO will be credited back; supply slot will be returned.')) return;
+        post('/admin/coin-engine/store/purchases/' + b.getAttribute('data-store-refund') + '/refund.json', {})
+          .then(function(){ toast('Refunded', 'win'); loadStorePurchases(); })
+          .catch(function(e){ toast((e && e.errors && e.errors[0]) || 'Failed', 'err'); });
+      });
+    });
+  }
+  // Wire view-switcher + add-item form
+  $$('[data-store-view]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var v = b.getAttribute('data-store-view');
+      if (v === 'items') loadStoreItems(); else loadStorePurchases();
+    });
+  });
+  if ($('#ce-store-add-toggle')){
+    $('#ce-store-add-toggle').addEventListener('click', function(){
+      var f = $('#ce-store-add-form'); f.hidden = !f.hidden;
+    });
+  }
+  if ($('#ce-store-cancel')){
+    $('#ce-store-cancel').addEventListener('click', function(){ $('#ce-store-add-form').hidden = true; });
+  }
+  if ($('#ce-store-save')){
+    $('#ce-store-save').addEventListener('click', function(){
+      var btn = $('#ce-store-save'); btn.disabled = true;
+      var traits = $('#ce-store-traits').value.trim();
+      if (traits){
+        try { JSON.parse(traits); } catch(e){ toast('Traits JSON is invalid', 'err'); btn.disabled = false; return; }
+      }
+      var body = {
+        name:               $('#ce-store-name').value,
+        kind:               $('#ce-store-kind').value,
+        description:        $('#ce-store-desc').value,
+        image_url:          $('#ce-store-image').value,
+        mint_address:       $('#ce-store-mint').value,
+        price_reno:         parseInt($('#ce-store-pr-reno').value, 10) || 0,
+        price_sol_lamports: parseInt($('#ce-store-pr-sol').value,  10) || 0,
+        supply:             parseInt($('#ce-store-supply').value,  10) || 0,
+        traits_json:        traits || null,
+        featured:           $('#ce-store-featured').checked
+      };
+      post('/admin/coin-engine/store/items.json', body).then(function(){
+        toast('Item created', 'win');
+        $('#ce-store-add-form').hidden = true;
+        // Reset form
+        ['ce-store-name','ce-store-desc','ce-store-image','ce-store-mint','ce-store-traits'].forEach(function(id){ $('#'+id).value = ''; });
+        $('#ce-store-pr-reno').value = '0'; $('#ce-store-pr-sol').value = '0'; $('#ce-store-supply').value = '1';
+        $('#ce-store-featured').checked = false;
+        loadStoreItems();
+      }).catch(function(e){
+        toast((e && e.errors && e.errors[0]) || 'Failed to save', 'err');
+      }).finally(function(){ btn.disabled = false; });
+    });
+  }
         }).catch(function(e){
           toast((e && e.errors && e.errors[0]) || 'Failed', 'err');
           btn.disabled = false;

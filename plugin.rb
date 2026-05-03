@@ -307,6 +307,15 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_wallets_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminWalletsController.layout false if defined?(DiscourseCoinEngine::AdminWalletsController)
 
+  # v0.12.0: storefront for NFTs and digital perks + $RENO presale
+  load File.expand_path('../app/models/discourse_coin_engine/store_item.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/store_purchase.rb', __FILE__)
+  load File.expand_path('../app/jobs/regular/coin_engine_confirm_phantom_purchase.rb', __FILE__)
+  load File.expand_path('../app/jobs/regular/coin_engine_fulfill_store_purchase.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/store_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_store_controller.rb', __FILE__)
+  DiscourseCoinEngine::AdminStoreController.layout false if defined?(DiscourseCoinEngine::AdminStoreController)
+
   DiscourseEvent.on(:user_created) do |user|
     next unless (SiteSetting.coin_engine_wallet_autogen_enabled rescue false)
     next unless user&.id
@@ -356,6 +365,27 @@ after_initialize do
     get    '/coin-engine/wallet/withdraw_request.json'               => 'discourse_coin_engine/wallet#withdraw_request_show'
     get    '/coin-engine/wallet/status.json'                         => 'discourse_coin_engine/wallet#status'
     post   '/coin-engine/wallet/request_generation.json'             => 'discourse_coin_engine/wallet#request_generation'
+    post   '/coin-engine/wallet/connect_phantom.json'                => 'discourse_coin_engine/wallet#connect_phantom'
+    post   '/coin-engine/wallet/disconnect_phantom.json'             => 'discourse_coin_engine/wallet#disconnect_phantom'
+
+    # v0.12.0: Storefront (user-facing)
+    get  '/coin-engine/store/items.json'                             => 'discourse_coin_engine/store#items'
+    get  '/coin-engine/store/items/:slug.json'                       => 'discourse_coin_engine/store#show'
+    post '/coin-engine/store/purchase_with_reno.json'                => 'discourse_coin_engine/store#purchase_with_reno'
+    post '/coin-engine/store/initiate_phantom_purchase.json'         => 'discourse_coin_engine/store#initiate_phantom_purchase'
+    post '/coin-engine/store/confirm_phantom_purchase.json'          => 'discourse_coin_engine/store#confirm_phantom_purchase'
+    get  '/coin-engine/store/my_purchases.json'                      => 'discourse_coin_engine/store#my_purchases'
+
+    # v0.12.0: Storefront (admin)
+    get    '/admin/coin-engine/store/items.json'                     => 'discourse_coin_engine/admin_store#index'
+    get    '/admin/coin-engine/store/stats.json'                     => 'discourse_coin_engine/admin_store#stats'
+    post   '/admin/coin-engine/store/items.json'                     => 'discourse_coin_engine/admin_store#create'
+    put    '/admin/coin-engine/store/items/:id.json'                 => 'discourse_coin_engine/admin_store#update', constraints: { id: %r{\d+} }
+    delete '/admin/coin-engine/store/items/:id.json'                 => 'discourse_coin_engine/admin_store#destroy', constraints: { id: %r{\d+} }
+    post   '/admin/coin-engine/store/items/reorder.json'             => 'discourse_coin_engine/admin_store#reorder'
+    get    '/admin/coin-engine/store/purchases.json'                 => 'discourse_coin_engine/admin_store#purchases'
+    post   '/admin/coin-engine/store/purchases/:id/fulfill.json'     => 'discourse_coin_engine/admin_store#fulfill', constraints: { id: %r{\d+} }
+    post   '/admin/coin-engine/store/purchases/:id/refund.json'      => 'discourse_coin_engine/admin_store#refund',  constraints: { id: %r{\d+} }
 
     # v0.11.0: Withdraw Requests admin queue
     get  '/admin/coin-engine/withdraw_requests.json'                       => 'discourse_coin_engine/admin_withdraw_requests#index'

@@ -161,14 +161,21 @@ module DiscourseCoinEngine
       autogen_enabled = (SiteSetting.coin_engine_wallet_autogen_enabled rescue false)
       threshold       = (SiteSetting.coin_engine_solana_min_send_threshold rescue 20_000).to_i
 
+      # is_phantom = the linked wallet is something OTHER than the custodial one
+      # we hold (covers BYO-from-day-one OR custodial user who connected Phantom).
+      # fallback_pubkey = the custodial pubkey we'd swap back to on disconnect.
+      is_phantom = cust && !wallet_pubkey.empty? && wallet_pubkey != cust.public_key
+
       render json: {
         wallet: {
-          linked:       !wallet_pubkey.empty?,
-          custodial:    !!cust,
-          self_custody: !wallet_pubkey.empty? && cust.nil?,
-          public_key:   wallet_pubkey.presence,
-          source:       cust&.source,
-          exported_at:  cust&.exported_at,
+          linked:           !wallet_pubkey.empty?,
+          custodial:        !!cust,
+          self_custody:     !wallet_pubkey.empty? && cust.nil?,
+          public_key:       wallet_pubkey.presence,
+          source:           cust&.source,
+          exported_at:      cust&.exported_at,
+          is_phantom:       !!is_phantom,
+          fallback_pubkey:  cust&.public_key,
         },
         balance: {
           total:     total,
@@ -208,6 +215,63 @@ module DiscourseCoinEngine
       render json: { ok: true, queued: true }
     rescue RateLimiter::LimitExceeded => e
       render json: { errors: ["Please wait #{e.available_in}s and try again."] }, status: 429
+    end
+
+    # POST /coin-engine/wallet/connect_phantom.json
+    # User clicks "Connect Phantom" in the FAB. Browser called
+    # window.solana.connect() and got a public key; it POSTs the key here.
+    # We validate format and overwrite user_field 1. The custodial row is
+    # left untouched as the "fallback" — disconnect restores it.
+    def connect_phantom
+      RateLimiter.new(current_user, 'coin_engine_phantom_connect', 10, 1.hour).performed!
+
+      pubkey = params[:public_key].to_s.strip
+      raise ::Discourse::InvalidParameters, 'public_key' if pubkey.length < 32 || pubkey.length > 64
+      raise ::Discourse::InvalidParameters, 'public_key (base58 only)' unless pubkey =~ %r{\A[1-9A-HJ-NP-Za-km-z]+\z}
+
+      field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
+
+      ::UserCustomField.upsert(
+        { user_id: current_user.id, name: "user_field_#{field_id}", value: pubkey,
+          created_at: Time.zone.now, updated_at: Time.zone.now },
+        unique_by: [:user_id, :name],
+      )
+
+      # Bust the user serializer cache so /u/{username}.json reflects the swap
+      begin
+        ::User.where(id: current_user.id).update_all(updated_at: Time.zone.now)
+        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+      rescue StandardError
+      end
+
+      Rails.logger.info("[coin_engine] phantom connected for user #{current_user.id} pubkey=#{pubkey}")
+      render json: { ok: true, public_key: pubkey, fallback_available: CustodialWallet.exists?(user_id: current_user.id, revoked_at: nil) }
+    rescue RateLimiter::LimitExceeded => e
+      render json: { errors: ["Too many connection attempts. Wait #{e.available_in}s."] }, status: 429
+    end
+
+    # POST /coin-engine/wallet/disconnect_phantom.json
+    # Restore user_field 1 to the custodial public key (the fallback).
+    # No-op + error if the user doesn't have a custodial wallet to fall back on.
+    def disconnect_phantom
+      cust = CustodialWallet.find_by(user_id: current_user.id, revoked_at: nil)
+      return render json: { errors: ['No custodial wallet on file to fall back to. Set a wallet via Preferences instead.'] }, status: 422 unless cust
+
+      field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
+      ::UserCustomField.upsert(
+        { user_id: current_user.id, name: "user_field_#{field_id}", value: cust.public_key,
+          created_at: Time.zone.now, updated_at: Time.zone.now },
+        unique_by: [:user_id, :name],
+      )
+
+      begin
+        ::User.where(id: current_user.id).update_all(updated_at: Time.zone.now)
+        Rails.cache.delete("coin_engine_score_user_#{current_user.id}")
+      rescue StandardError
+      end
+
+      Rails.logger.info("[coin_engine] phantom disconnected for user #{current_user.id}, fell back to custodial #{cust.public_key}")
+      render json: { ok: true, public_key: cust.public_key }
     end
 
     private
