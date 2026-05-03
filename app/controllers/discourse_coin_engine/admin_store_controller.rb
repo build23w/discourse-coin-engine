@@ -78,13 +78,31 @@ module DiscourseCoinEngine
     end
 
     def fulfill
+      Rails.logger.info("[coin_engine.admin_store] fulfill admin=#{current_user&.username} purchase=#{params[:id]}")
       pp = StorePurchase.find_by(id: params[:id])
       raise ::Discourse::NotFound unless pp
       pp.update!(status: 'fulfilled', fulfilled_at: Time.zone.now)
+      publish_credit_event(pp, label: 'Purchase fulfilled')
       render json: { ok: true, purchase: serialize_admin_purchase(pp) }
     end
 
+    def publish_credit_event(pp, label:)
+      return unless pp.user_id
+      coin_name = (SiteSetting.coin_engine_coin_name rescue '$RENO') rescue '$RENO'
+      MessageBus.publish("/coin-engine/credits/#{pp.user_id}", {
+        amount: 0,
+        reason: 'store_fulfilled',
+        label:  label,
+        coin:   coin_name,
+        ref:    { kind: 'store_purchase', id: pp.id, item: pp.item&.name },
+        ts:     Time.now.to_i,
+      }, user_ids: [pp.user_id])
+    rescue StandardError => e
+      Rails.logger.warn("[coin_engine] publish credit failed: #{e.message}")
+    end
+
     def refund
+      Rails.logger.info("[coin_engine.admin_store] refund admin=#{current_user&.username} purchase=#{params[:id]}")
       pp = StorePurchase.find_by(id: params[:id])
       raise ::Discourse::NotFound unless pp
       return render json: { errors: ['Already refunded.'] }, status: 422 if pp.status == 'refunded'
@@ -101,6 +119,7 @@ module DiscourseCoinEngine
             .update_all('sold_count = sold_count - 1, updated_at = NOW()')
         end
       end
+      publish_credit_event(pp, label: pp.currency == 'reno' ? "Refunded #{pp.amount_paid} $RENO" : 'Purchase refunded')
       render json: { ok: true, purchase: serialize_admin_purchase(pp) }
     end
 

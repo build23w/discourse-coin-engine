@@ -15,6 +15,7 @@ module DiscourseCoinEngine
     end
 
     def seed
+      Rails.logger.info("[coin_engine.wallet] seed start user=#{current_user&.id}")
       params.require(:public_key)
       params.require(:secret_key)
 
@@ -62,6 +63,7 @@ module DiscourseCoinEngine
     end
 
     def export
+      Rails.logger.info("[coin_engine.wallet] export start user=#{current_user&.id}")
       RateLimiter.new(current_user, 'coin_engine_wallet_export', 3, 24.hours).performed!
 
       cw = CustodialWallet.find_by(user_id: current_user.id, revoked_at: nil)
@@ -97,6 +99,7 @@ module DiscourseCoinEngine
     end
 
     def withdraw_request_create
+      Rails.logger.info("[coin_engine.wallet] withdraw_request_create user=#{current_user&.id}")
       RateLimiter.new(current_user, 'coin_engine_withdraw_request', 1, 48.hours).performed!
 
       field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
@@ -143,11 +146,12 @@ module DiscourseCoinEngine
 
     def status
       uid = current_user.id
+      Rails.logger.info("[coin_engine.wallet] status user=#{uid}")
       field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
       wallet_pubkey = (current_user.user_fields || {})[field_id.to_s].to_s.strip
       cust = CustodialWallet.find_by(user_id: uid, revoked_at: nil)
 
-      total = (::DiscourseCoinEngine.respond_to?(:score_for) ? ::DiscourseCoinEngine.score_for(uid).to_i : 0) rescue 0
+      total = (::DiscourseCoinEngine.respond_to?(:coin_user_total) ? ::DiscourseCoinEngine.coin_user_total(uid).to_i : 0) rescue 0
       paid = begin
         paid_sql = "SELECT COALESCE(SUM(amount),0)::bigint FROM coin_engine_payments WHERE user_id = #{uid.to_i} AND status IN ('approved','sent','on_chain')"
         ::ActiveRecord::Base.connection.select_value(paid_sql).to_i
@@ -192,6 +196,7 @@ module DiscourseCoinEngine
     end
 
     def request_generation
+      Rails.logger.info("[coin_engine.wallet] request_generation user=#{current_user&.id}")
       RateLimiter.new(current_user, 'coin_engine_request_wallet_gen', 1, 5.minutes).performed!
 
       unless WalletEncryption.passphrase_set?
@@ -223,6 +228,7 @@ module DiscourseCoinEngine
     # We validate format and overwrite user_field 1. The custodial row is
     # left untouched as the "fallback" — disconnect restores it.
     def connect_phantom
+      Rails.logger.info("[coin_engine.wallet] connect_phantom user=#{current_user&.id}")
       RateLimiter.new(current_user, 'coin_engine_phantom_connect', 10, 1.hour).performed!
 
       pubkey = params[:public_key].to_s.strip
@@ -254,6 +260,7 @@ module DiscourseCoinEngine
     # Restore user_field 1 to the custodial public key (the fallback).
     # No-op + error if the user doesn't have a custodial wallet to fall back on.
     def disconnect_phantom
+      Rails.logger.info("[coin_engine.wallet] disconnect_phantom user=#{current_user&.id}")
       cust = CustodialWallet.find_by(user_id: current_user.id, revoked_at: nil)
       return render json: { errors: ['No custodial wallet on file to fall back to. Set a wallet via Preferences instead.'] }, status: 422 unless cust
 
@@ -296,7 +303,7 @@ module DiscourseCoinEngine
     end
 
     def available_to_withdraw(user_id)
-      total = (::DiscourseCoinEngine.respond_to?(:score_for) ? ::DiscourseCoinEngine.score_for(user_id).to_i : 0) rescue 0
+      total = (::DiscourseCoinEngine.respond_to?(:coin_user_total) ? ::DiscourseCoinEngine.coin_user_total(user_id).to_i : 0) rescue 0
       paid_sql = "SELECT COALESCE(SUM(amount),0)::bigint FROM coin_engine_payments WHERE user_id = #{user_id.to_i} AND status IN ('approved','sent','on_chain')"
       paid = ::ActiveRecord::Base.connection.select_value(paid_sql).to_i
       [total - paid, 0].max

@@ -16,6 +16,7 @@
 module DiscourseCoinEngine
   class MeController < ::ApplicationController
     requires_login
+    skip_before_action :check_xhr, raise: false
 
     # GET /coin-engine/me/score.json
     # { score, rank, tier, sources: { ce_*: N, post: N, like: N, ... } }

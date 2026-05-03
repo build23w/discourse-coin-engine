@@ -56,6 +56,20 @@ module Jobs
 
       ::Jobs.enqueue(:coin_engine_fulfill_store_purchase, purchase_id: purchase.id) if defined?(::Jobs::CoinEngineFulfillStorePurchase)
 
+      begin
+        coin_name = (SiteSetting.coin_engine_coin_name rescue '$RENO')
+        MessageBus.publish("/coin-engine/credits/#{purchase.user_id}", {
+          amount: 0,
+          reason: 'purchase_confirmed',
+          label:  purchase.kind == 'reno_presale' ? "$RENO presale confirmed" : 'On-chain payment confirmed',
+          coin:   coin_name,
+          ref:    { kind: 'store_purchase', id: purchase.id, tx: purchase.tx_signature },
+          ts:     Time.now.to_i,
+        }, user_ids: [purchase.user_id])
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine] publish purchase_confirmed failed: #{e.message}")
+      end
+
       Rails.logger.info("[coin_engine] purchase #{purchase_id} confirmed on-chain")
     rescue StandardError => e
       Rails.logger.error("[coin_engine] confirm_phantom_purchase failed for #{args[:purchase_id]}: #{e.class}: #{e.message}")

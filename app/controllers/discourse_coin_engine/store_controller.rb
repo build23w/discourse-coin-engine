@@ -38,6 +38,7 @@ module DiscourseCoinEngine
     end
 
     def items
+      Rails.logger.info("[coin_engine.store] items.list user=#{current_user&.id}")
       limit = [params[:limit].to_i, 60].min
       limit = 30 if limit <= 0
       kind = params[:kind].to_s.presence
@@ -55,6 +56,7 @@ module DiscourseCoinEngine
 
     # ---------- Buy with $RENO ----------
     def purchase_with_reno
+      Rails.logger.info("[coin_engine.store] purchase_with_reno user=#{current_user&.id} item=#{params[:item_id]}")
       RateLimiter.new(current_user, 'coin_engine_store_buy_reno', 30, 1.hour).performed!
 
       item_id = params[:item_id].to_i
@@ -115,6 +117,7 @@ module DiscourseCoinEngine
 
     # ---------- Buy with SOL via Phantom ----------
     def initiate_phantom_purchase
+      Rails.logger.info("[coin_engine.store] initiate_phantom user=#{current_user&.id} kind=#{params[:kind]} item=#{params[:item_id]}")
       RateLimiter.new(current_user, 'coin_engine_store_buy_sol_init', 20, 1.hour).performed!
 
       kind = params[:kind].to_s
@@ -182,6 +185,7 @@ module DiscourseCoinEngine
     end
 
     def confirm_phantom_purchase
+      Rails.logger.info("[coin_engine.store] confirm_phantom user=#{current_user&.id} purchase=#{params[:purchase_id]} sig=#{params[:tx_signature].to_s[0,12]}")
       RateLimiter.new(current_user, 'coin_engine_store_buy_sol_confirm', 30, 1.hour).performed!
 
       pid = params[:purchase_id].to_i
@@ -219,7 +223,7 @@ module DiscourseCoinEngine
     private
 
     def score_for(uid)
-      ::DiscourseCoinEngine.respond_to?(:score_for) ? ::DiscourseCoinEngine.score_for(uid).to_i : 0
+      ::DiscourseCoinEngine.respond_to?(:coin_user_total) ? ::DiscourseCoinEngine.coin_user_total(uid).to_i : 0
     rescue StandardError
       0
     end

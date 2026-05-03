@@ -35,6 +35,7 @@ module DiscourseCoinEngine
 
     # POST /admin/coin-engine/withdraw_requests/:id/decide.json
     def decide
+      Rails.logger.info("[coin_engine.admin_withdraw] decide admin=#{current_user&.username} wr=#{params[:id]} status=#{params[:status]}")
       wr = WithdrawRequest.find_by(id: params[:id])
       raise ::Discourse::NotFound unless wr
       return render json: { errors: ['Already decided'] }, status: 422 unless wr.pending?
@@ -52,7 +53,23 @@ module DiscourseCoinEngine
       )
 
       notify_user(wr)
+      publish_decision_event(wr)
       render json: { ok: true, request: serialize(wr) }
+    end
+
+    def publish_decision_event(wr)
+      coin_name = (SiteSetting.coin_engine_coin_name rescue '$RENO') rescue '$RENO'
+      label = wr.approved? ? 'Withdraw approved' : 'Withdraw declined'
+      MessageBus.publish("/coin-engine/credits/#{wr.user_id}", {
+        amount: 0,
+        reason: 'withdraw_decision',
+        label:  label,
+        coin:   coin_name,
+        ref:    { kind: 'withdraw_request', id: wr.id, status: wr.status },
+        ts:     Time.now.to_i,
+      }, user_ids: [wr.user_id])
+    rescue StandardError => e
+      Rails.logger.warn("[coin_engine] publish withdraw decision failed: #{e.message}")
     end
 
     private
