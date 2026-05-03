@@ -100,13 +100,11 @@ module DiscourseCoinEngine
       results = { score_credited: false, ledger_appended: false, email_sent: false, receipt_pm_created: false }
 
       ActiveRecord::Base.transaction do
-        # Credit gamification_scores via raw SQL (bypass model namespace issues)
+        # Credit via credit_score helper (v0.12.1 - was raw SQL, now mirrors to
+        # gamification_leaderboard_scores too so the leaderboard sees the credit)
         begin
-          ActiveRecord::Base.connection.exec_insert(
-            "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-            'coin_engine_credit',
-            [user.id, Date.today, amount]
-          )
+          ::DiscourseCoinEngine.credit_score(user.id, Date.today, amount)
+          ::DiscourseCoinEngine.refresh_user_score(user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
           results[:score_credited] = true
         rescue StandardError => e
           Rails.logger.warn "[coin-engine] manual payment score credit failed: #{e.message}"

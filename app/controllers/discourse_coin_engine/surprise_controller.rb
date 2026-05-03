@@ -22,10 +22,8 @@ module DiscourseCoinEngine
         else                    [10,   'standard']
         end
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_chest_credit', [current_user.id, today, reward]
-        )
+        # v0.12.1 - credit_score helper so leaderboard ledger gets the chest reward
+        ::DiscourseCoinEngine.credit_score(current_user.id, today, reward)
         DailyChest.create!(
           user_id: current_user.id,
           claim_date: today,
@@ -53,10 +51,8 @@ module DiscourseCoinEngine
 
       f = nil
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_freeze_charge', [current_user.id, Date.today, -cost]
-        )
+        # v0.12.1 - credit_score helper so leaderboard ledger gets the debit too
+        ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, -cost)
         f = StreakFreeze.create!(user_id: current_user.id, freeze_date: d, cost_paid: cost)
         ::DiscourseCoinEngine.refresh_user_score(current_user.id)
         Rails.cache.delete("coin_engine_streak_user_#{current_user.id}")

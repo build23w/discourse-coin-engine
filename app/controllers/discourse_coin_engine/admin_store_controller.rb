@@ -112,6 +112,8 @@ module DiscourseCoinEngine
         # If they paid in $RENO, credit it back
         if pp.currency == 'reno' && pp.amount_paid.to_i > 0
           ::DiscourseCoinEngine.credit_score(pp.user_id, Date.today, pp.amount_paid.to_i)
+          # v0.12.1 - propagate to leaderboard MV so the refunded amount shows up
+          ::DiscourseCoinEngine.refresh_user_score(pp.user_id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
         end
         # Restore the supply slot if there is one
         if pp.item_id

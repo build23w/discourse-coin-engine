@@ -34,10 +34,8 @@ module ::Jobs
       return unless ::User.where(id: user_id, staged: false, suspended_till: nil).exists?
 
       ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.exec_query(
-          "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-          'ce_spotlight_reward', [user_id, Date.today, reward]
-        )
+        # v0.12.1 - credit_score helper so leaderboard ledger gets the spotlight reward
+        ::DiscourseCoinEngine.credit_score(user_id, Date.today, reward)
         ::DiscourseCoinEngine::Spotlight.create!(
           user_id: user_id, post_id: post_id, topic_id: topic_id,
           reason: 'underrated', reward: reward, featured_at: Time.now

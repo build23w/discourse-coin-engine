@@ -41,7 +41,7 @@ module ::DiscourseCoinEngine
     # Throttled to once per 60s — REFRESH MATERIALIZED VIEW is a full table scan
     # and we don't want every tip/quest claim to trigger one.
     begin
-      ::DiscourseCoinEngine.refresh_leaderboard_views!(throttle: 60)
+      ::DiscourseCoinEngine.refresh_leaderboard_views!(throttle: 5)
     rescue StandardError => e
       Rails.logger.warn("[coin_engine] refresh_leaderboard_views! failed: #{e.class}: #{e.message}")
     end
@@ -108,7 +108,7 @@ module ::DiscourseCoinEngine
   # the user's Top-10 / global leaderboard rank lags actual earnings without
   # this nudge. We try the plugin's helper first (cleaner if it exists) and
   # fall back to raw SQL if not.
-  def self.refresh_leaderboard_views!(throttle: 60)
+  def self.refresh_leaderboard_views!(throttle: 5)
     last = Rails.cache.read('coin_engine_lb_refresh_at')
     return if last && Time.now - last < throttle.to_i
     Rails.cache.write('coin_engine_lb_refresh_at', Time.now, expires_in: 1.day)

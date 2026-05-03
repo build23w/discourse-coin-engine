@@ -22,10 +22,8 @@ module ::Jobs
       candidate_ids.each do |uid|
         next if ::DiscourseCoinEngine::RandomAirdrop.find_by(user_id: uid, airdrop_date: today)
         ActiveRecord::Base.transaction do
-          ActiveRecord::Base.connection.exec_query(
-            "INSERT INTO gamification_scores (user_id, date, score) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET score = gamification_scores.score + EXCLUDED.score",
-            'ce_airdrop_random', [uid, today, amount]
-          )
+          # v0.12.1 - credit_score helper so leaderboard ledger gets the airdrop
+          ::DiscourseCoinEngine.credit_score(uid, today, amount)
           ::DiscourseCoinEngine::RandomAirdrop.create!(
             user_id: uid, amount: amount, airdrop_date: today, reason: 'random_kindness'
           )

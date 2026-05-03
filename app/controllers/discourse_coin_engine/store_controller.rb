@@ -92,6 +92,11 @@ module DiscourseCoinEngine
         # Debit the user via a negative gamification_score row dated today.
         # This routes through the same credit_score helper (negative amount).
         ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, -price)
+        # v0.12.1 - bust caches + REFRESH MATERIALIZED VIEW so /leaderboard/N
+        # reflects the spend immediately. Without this the user sees their
+        # gamification_scores total drop in the FAB but the leaderboard +
+        # other endpoints stay stale until the next cache eviction.
+        ::DiscourseCoinEngine.refresh_user_score(current_user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
 
         purchase = StorePurchase.create!(
           user_id:         current_user.id,

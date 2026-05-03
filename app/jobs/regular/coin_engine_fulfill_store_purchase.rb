@@ -77,6 +77,8 @@ module Jobs
       end
       if (credit = traits['reno_credit']).to_i > 0
         ::DiscourseCoinEngine.credit_score(user.id, Date.today, credit.to_i)
+        # v0.12.1 - leaderboard MV refresh so the bonus is visible everywhere
+        ::DiscourseCoinEngine.refresh_user_score(user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
       end
     end
 

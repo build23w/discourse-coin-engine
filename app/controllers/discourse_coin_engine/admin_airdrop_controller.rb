@@ -41,9 +41,12 @@ module DiscourseCoinEngine
 
       results = { score_credited: false, ledger_appended: false, email_sent: false, webhook_posted: false }
 
-      # 1. Credit gamification score
+      # 1. Credit gamification score (v0.12.1 - via credit_score helper so the
+      # leaderboard ledger gets the mirrored write; otherwise /leaderboard/N
+      # would never show airdropped amounts)
       begin
-        ::GamificationScore.create!(user_id: user.id, date: Date.today, score: amount) if defined?(::GamificationScore)
+        ::DiscourseCoinEngine.credit_score(user.id, Date.today, amount)
+        ::DiscourseCoinEngine.refresh_user_score(user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
         results[:score_credited] = true
       rescue StandardError => e
         Rails.logger.warn "[coin-engine] airdrop score credit failed: #{e.message}"
