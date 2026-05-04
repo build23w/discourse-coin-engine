@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.12.7
+# version: 0.14.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -335,6 +335,9 @@ after_initialize do
   # v0.12.7 - server-side Solana RPC proxy so the browser doesn't hit
   # api.mainnet-beta.solana.com directly (which 403s on browser CORS).
   load File.expand_path('../app/controllers/discourse_coin_engine/solana_controller.rb', __FILE__)
+  # v0.14.0 - Notifier subscription stub (records interest until the real
+  # pump-alert service is built).
+  load File.expand_path('../app/controllers/discourse_coin_engine/notifier_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminStoreController.layout false if defined?(DiscourseCoinEngine::AdminStoreController)
 
   DiscourseEvent.on(:user_created) do |user|
@@ -412,6 +415,9 @@ after_initialize do
 
     # v0.12.7: Solana RPC proxy (browser hits this instead of mainnet-beta)
     get  '/coin-engine/solana/recent_blockhash.json'                 => 'discourse_coin_engine/solana#recent_blockhash'
+
+    # v0.14.0: Notifier interest registration (FAB hub Notifier tab)
+    post '/coin-engine/notifier/subscribe.json'                      => 'discourse_coin_engine/notifier#subscribe'
 
     # v0.12.0: Storefront (admin)
     get    '/admin/coin-engine/store/items.json'                     => 'discourse_coin_engine/admin_store#index'
