@@ -153,20 +153,33 @@ module DiscourseCoinEngine
       # Consume the nonce (single-use)
       Discourse.redis.del("coin_engine_signup_nonce:#{pubkey}")
 
-      # ---- Layer 2: on-chain activity gate ----
-      if (SiteSetting.coin_engine_phantom_signup_require_activity rescue true)
-        unless wallet_has_activity?(pubkey)
+      # ---- Layer 2: on-chain activity gate (fail-open on RPC failure) ----
+      # The check returns a tri-state. We ONLY block on :inactive (RPC
+      # responded successfully and the wallet has zero signatures). On
+      # :unknown (RPC failed / throttled / returned malformed data) we
+      # pass the user through and log — free RPCs throttle this method
+      # heavily and we don't want a legitimate user to fail signup just
+      # because publicnode is rate-limiting today.
+      if (SiteSetting.coin_engine_phantom_signup_require_activity rescue false)
+        case wallet_activity_state(pubkey)
+        when :inactive
           return render json: {
             errors: ['This wallet has no on-chain history. Send any tiny transaction to it (or from it) and try again.']
           }, status: 422
+        when :unknown
+          Rails.logger.warn("[coin_engine.auth] activity check unknown (RPC issue) — passing through ip=#{request.remote_ip} pubkey=#{pubkey}")
+          # fall through (fail-open)
         end
       end
 
-      # ---- Layer 3 (optional): minimum balance gate ----
+      # ---- Layer 3 (optional): minimum balance gate (fail-open on RPC failure) ----
       min_balance = (SiteSetting.coin_engine_phantom_signup_min_balance_lamports rescue 0).to_i
       if min_balance > 0
         bal = wallet_balance_lamports(pubkey)
-        if bal.nil? || bal < min_balance
+        if bal.nil?
+          Rails.logger.warn("[coin_engine.auth] balance check unknown (RPC issue) — passing through ip=#{request.remote_ip} pubkey=#{pubkey}")
+          # fall through (fail-open)
+        elsif bal < min_balance
           return render json: {
             errors: ["This wallet's balance is below the minimum required for signup (#{min_balance} lamports)."]
           }, status: 422
@@ -321,11 +334,20 @@ module DiscourseCoinEngine
     end
 
     # Activity check: does this wallet have any confirmed transaction in its
-    # history? Cheap to bypass (~$0.0001 SOL per fake) but at scale becomes a
-    # meaningful filter against bot farms that just generate keypairs.
-    def wallet_has_activity?(pubkey)
+    # history? Tri-state so we can distinguish "wallet really has no history"
+    # (block) from "RPC didn't answer" (pass-through, fail-open).
+    #   :active   — RPC returned >= 1 signature
+    #   :inactive — RPC returned an empty array (definitive: no history)
+    #   :unknown  — RPC threw / returned nil / returned non-array
+    def wallet_activity_state(pubkey)
       result = solana_rpc('getSignaturesForAddress', [pubkey, { 'limit' => 1 }])
-      result.is_a?(Array) && result.length > 0
+      return :unknown if result.nil? || !result.is_a?(Array)
+      result.empty? ? :inactive : :active
+    end
+
+    # Backward-compat alias if anything else still calls the boolean form.
+    def wallet_has_activity?(pubkey)
+      wallet_activity_state(pubkey) == :active
     end
 
     def wallet_balance_lamports(pubkey)

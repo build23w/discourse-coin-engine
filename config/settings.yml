@@ -392,11 +392,26 @@ plugins:
   # ===== v0.16.0: Phantom signup sybil defenses =====
   # Sybil-resistance gate: the wallet must have at least one confirmed
   # transaction in its history before it can sign up. Brand-new unfunded
-  # wallets fail this check (which is what most spam farms use). Costs
-  # ~$0.0001 SOL to bypass per fake — at scale it adds real cost.
-  # Set to false ONLY if you have a different anti-spam layer in place.
+  # wallets fail this check (which is what most spam farms use).
+  #
+  # IMPORTANT: this requires a Solana RPC that responds reliably to
+  # getSignaturesForAddress. Free / public RPCs (mainnet-beta,
+  # publicnode, ankr) frequently rate-limit or block this call,
+  # which would cause legitimate users to fail signup whenever the
+  # RPC is throttling.
+  #
+  # The check is FAIL-OPEN: if the RPC errors or returns no result,
+  # we pass the user through (we don't have the data to make a
+  # decision, so we trust). The check ONLY blocks on a positive
+  # "wallet has zero history" response.
+  #
+  # Default is OFF. Turn it ON only if:
+  #   1. coin_engine_solana_rpc_url is a paid/private RPC (Helius,
+  #      QuickNode, Triton, etc.) that you've confirmed handles this
+  #      method without throttling, AND
+  #   2. you're seeing real signup spam that this filter would catch.
   coin_engine_phantom_signup_require_activity:
-    default: true
+    default: false
   # Optional: require the wallet to hold at least N lamports. 0 = disabled.
   # 10000000 lamports = 0.01 SOL ≈ $1-2 depending on price. Strong
   # filter but locks out users who connected Phantom but haven't received
