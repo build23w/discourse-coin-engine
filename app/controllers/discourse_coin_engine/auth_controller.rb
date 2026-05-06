@@ -25,9 +25,21 @@
 
 module DiscourseCoinEngine
   class AuthController < ::ApplicationController
-    skip_before_action :ensure_logged_in,        raise: false
-    skip_before_action :redirect_to_login_if_required, raise: false
-    skip_before_action :check_xhr,               raise: false
+    skip_before_action :ensure_logged_in,                raise: false
+    skip_before_action :redirect_to_login_if_required,   raise: false
+    skip_before_action :check_xhr,                       raise: false
+
+    # v0.15.2 - Skip CSRF on the public auth endpoints. Anonymous CSRF tokens
+    # rotate when the session cookie regenerates between page-load and form
+    # submit, so a long-lived signup form (where the user took >60s to fill
+    # in fields, or where Phantom popped before the form was rendered) hits
+    # BAD CSRF on submit. Discourse's own /u.json signup endpoint does NOT
+    # skip CSRF, but it relies on the form being POSTed within the same
+    # render cycle. Our flow can't guarantee that. The IP rate limiter (5/h)
+    # plus pubkey-uniqueness check are the abuse mitigations here, and the
+    # endpoint exclusively creates accounts (cannot read or modify any
+    # existing data), so the trade-off is acceptable.
+    skip_before_action :verify_authenticity_token,       only: %i[signup_with_phantom phantom_taken], raise: false
 
     SOLANA_PUBKEY_RE = /\A[1-9A-HJ-NP-Za-km-z]{32,44}\z/.freeze
 
@@ -96,7 +108,7 @@ module DiscourseCoinEngine
             username:                username,
             email:                   email,
             password:                password,
-            active:                  true,                    # skip email verification
+            active:                  true,                    # skip email-verification gate
             approved:                !SiteSetting.must_approve_users,
             ip_address:              request.remote_ip,
             registration_ip_address: request.remote_ip,
@@ -104,6 +116,17 @@ module DiscourseCoinEngine
           )
           user.password_required!
           user.save!
+
+          # v0.15.2 - Wallet-based signups don't need email verification —
+          # the Phantom signature is the auth proof. Mark every email_token
+          # this user has as confirmed so Discourse never shows the
+          # "please verify your email" interstitial. The user.activate path
+          # also clears any pending activation jobs and bumps last_seen_at.
+          # We pair this with active: true above — both are needed in some
+          # Discourse versions because the User row's `active` and the
+          # EmailToken's `confirmed` are checked at different points in the
+          # login pipeline.
+          user.email_tokens.update_all(confirmed: true) if user.email_tokens.any?
 
           # Wallet link — delete-then-insert (no unique index on user_custom_fields,
           # see feedback memory: upsert silently dupes).
