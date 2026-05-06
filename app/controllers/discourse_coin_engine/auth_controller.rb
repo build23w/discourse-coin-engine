@@ -25,7 +25,9 @@
 #   4. Browser  -> POST /coin-engine/auth/signup_with_phantom.json
 #               { public_key, signature_b64, nonce, username, email, password }
 #   5. Server   - verify nonce exists in Redis for PK
-#               - verify ed25519(message, signature, PK) via RbNaCl
+#               - verify ed25519(message, signature, PK) via OpenSSL
+#                 (DER-wrap the 32-byte pubkey + OID 1.3.101.112, hand to
+#                 OpenSSL::PKey.read, then pkey.verify(nil, sig, msg))
 #               - verify wallet activity / balance (if SiteSetting on)
 #               - create user (active=true, email_tokens confirmed)
 #               - link wallet via UserCustomField (delete-then-insert)
@@ -34,7 +36,7 @@
 
 require 'base64'
 require 'securerandom'
-require 'rbnacl'
+require 'openssl'
 require 'net/http'
 require 'json'
 
@@ -262,10 +264,19 @@ module DiscourseCoinEngine
 
     private
 
-    # ed25519 signature verification.
+    # ed25519 signature verification via Ruby stdlib OpenSSL.
+    #
     # Solana pubkeys are 32-byte ed25519 public keys, Base58-encoded.
     # Phantom signs with ed25519 over the UTF-8 bytes of the message; we
     # receive the 64-byte signature as Base64 from the browser.
+    #
+    # OpenSSL needs a DER-encoded SubjectPublicKeyInfo to consume an
+    # ed25519 key — the OID 1.3.101.112 is ed25519 per RFC 8410. We wrap
+    # the raw 32-byte pubkey in that structure and hand it to PKey.read.
+    # The verify(nil, sig, msg) form (digest = nil) is the ed25519 path
+    # — ed25519 hashes the message internally, so we don't pre-digest.
+    ED25519_OID = '1.3.101.112'
+
     def verify_solana_signature(pubkey_b58, message, signature_b64)
       pubkey_bytes = base58_decode(pubkey_b58)
       return false unless pubkey_bytes.bytesize == 32
@@ -273,9 +284,16 @@ module DiscourseCoinEngine
       signature_bytes = Base64.strict_decode64(signature_b64)
       return false unless signature_bytes.bytesize == 64
 
-      verify_key = ::RbNaCl::VerifyKey.new(pubkey_bytes)
-      verify_key.verify(signature_bytes, message.encode(Encoding::UTF_8))
-    rescue ::RbNaCl::BadSignatureError
+      asn1 = ::OpenSSL::ASN1::Sequence.new([
+        ::OpenSSL::ASN1::Sequence.new([
+          ::OpenSSL::ASN1::ObjectId.new(ED25519_OID),
+        ]),
+        ::OpenSSL::ASN1::BitString.new(pubkey_bytes),
+      ])
+      pkey = ::OpenSSL::PKey.read(asn1.to_der)
+      pkey.verify(nil, signature_bytes, message.encode(Encoding::UTF_8))
+    rescue ::OpenSSL::PKey::PKeyError, ArgumentError, ::ArgumentError => e
+      Rails.logger.warn("[coin_engine.auth] verify_solana_signature openssl error: #{e.class}: #{e.message[0,200]}")
       false
     rescue StandardError => e
       Rails.logger.warn("[coin_engine.auth] verify_solana_signature error: #{e.class}: #{e.message[0,200]}")
