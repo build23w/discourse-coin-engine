@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.15.2
+# version: 0.16.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -424,6 +424,9 @@ after_initialize do
 
     # v0.15.0: Phantom-based public signup (anon visitors connect Phantom +
     # create account atomically). phantom_taken is the pre-flight check.
+    # v0.16.0: signup_nonce issues the ed25519 signing challenge; the
+    # signature is then verified inside signup_with_phantom.
+    get  '/coin-engine/auth/signup_nonce.json'                       => 'discourse_coin_engine/auth#signup_nonce'
     post '/coin-engine/auth/signup_with_phantom.json'                => 'discourse_coin_engine/auth#signup_with_phantom'
     get  '/coin-engine/auth/phantom_taken.json'                      => 'discourse_coin_engine/auth#phantom_taken'
 

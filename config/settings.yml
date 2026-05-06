@@ -388,3 +388,25 @@ plugins:
   # wallet so staking funds never co-mingle with operational SOL.
   coin_engine_staking_treasury:
     default: ""
+
+  # ===== v0.16.0: Phantom signup sybil defenses =====
+  # Sybil-resistance gate: the wallet must have at least one confirmed
+  # transaction in its history before it can sign up. Brand-new unfunded
+  # wallets fail this check (which is what most spam farms use). Costs
+  # ~$0.0001 SOL to bypass per fake — at scale it adds real cost.
+  # Set to false ONLY if you have a different anti-spam layer in place.
+  coin_engine_phantom_signup_require_activity:
+    default: true
+  # Optional: require the wallet to hold at least N lamports. 0 = disabled.
+  # 10000000 lamports = 0.01 SOL ≈ $1-2 depending on price. Strong
+  # filter but locks out users who connected Phantom but haven't received
+  # any SOL yet.
+  coin_engine_phantom_signup_min_balance_lamports:
+    default: 0
+    min: 0
+    max: 10000000000
+  # Optional: route all Phantom signups through admin approval queue,
+  # regardless of the global must_approve_users setting. Useful if you
+  # want most signups instant but Phantom signups reviewed.
+  coin_engine_phantom_signup_force_approval:
+    default: false
