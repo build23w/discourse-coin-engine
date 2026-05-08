@@ -224,7 +224,7 @@ module DiscourseCoinEngine
         topic_id:     topic.id,
         topic_title:  topic.title,
         url:          "/t/#{topic.slug}/#{topic.id}/#{p.post_number}",
-        excerpt:      ::Post.excerpt(p.cooked, 220, post: p) || '',
+        excerpt:      clean_excerpt(p),
         post_number:  p.post_number,
         is_op:        p.post_number == 1,
         like_count:   p.like_count.to_i,
@@ -235,6 +235,23 @@ module DiscourseCoinEngine
         created_at:   p.created_at&.iso8601,
         word_count:   p.word_count.to_i,
       }
+    end
+
+    # v0.18.7 — Post.excerpt sometimes returns markdown link syntax
+    # (`[text](url)`) and unstripped mention `<a>` tags. We do an
+    # additional pass to land truly plain text, so the Twitter-feed
+    # excerpts read cleanly.
+    def clean_excerpt(p)
+      raw = ::Post.excerpt(p.cooked, 220, post: p) || ''
+      # Strip markdown link syntax — keep the visible text only.
+      raw = raw.gsub(/\[([^\]]+)\]\([^)]+\)/, '\1')
+      # Strip any residual HTML tags (e.g. <a class="mention">@user</a>).
+      raw = raw.gsub(/<[^>]+>/, '')
+      # Collapse whitespace and decode entities.
+      raw = ::CGI.unescapeHTML(raw)
+      raw.gsub(/\s+/, ' ').strip
+    rescue StandardError
+      ''
     end
 
     # ----- badges (Discourse + plugin) -----

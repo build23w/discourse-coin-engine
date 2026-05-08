@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.18.2
+# version: 0.18.10
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -251,6 +251,9 @@ after_initialize do
   load File.expand_path('../lib/discourse_coin_engine/themed_week_dispatcher.rb', __FILE__)
   # v0.18.0 — rich public-profile data builder
   load File.expand_path('../lib/discourse_coin_engine/profile_builder.rb', __FILE__)
+  # v0.18.10 — server-rendered <noscript> fallback so bots / no-JS users
+  # see the user's recent posts + stats without the SPA mounting.
+  load File.expand_path('../lib/discourse_coin_engine/profile_noscript_renderer.rb', __FILE__)
   # v0.6.0 phase controllers
   load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
@@ -694,6 +697,18 @@ after_initialize do
 
   add_to_serializer(:topic_list_item, :coin_engine_views, include_condition: -> { SiteSetting.coin_engine_enabled }) do
     object.views
+  end
+
+  # v0.18.10 — Server-rendered <noscript> fallback for user profile SEO.
+  # Fires on every page; ProfileNoscriptRenderer.render_for_request inspects
+  # the request path and only emits HTML for /u/{username}(/summary|/activity|/badges)
+  # routes. Empty string for everything else, so the cost on non-profile
+  # pages is just a regex match.
+  register_html_builder('before-body-close') do |controller|
+    ::DiscourseCoinEngine::ProfileNoscriptRenderer.render_for_request(controller)
+  rescue StandardError => e
+    Rails.logger.warn("[coin_engine] noscript html_builder failed: #{e.class}: #{e.message[0,200]}")
+    ''
   end
 
   if defined?(DiscourseEvent)
