@@ -133,6 +133,16 @@ plugins:
   coin_engine_themed_week_ends_at:
     default: ""
     client: true
+  # v0.17.0 — flat $RENO bonus credited per qualifying post (in addition to
+  # any normal reward). Set to 0 to disable bonus crediting (banner stays
+  # informational only). Default 100 = a meaningful but not game-breaking
+  # bump per participation. Idempotent: each post triggers the bonus at
+  # most once, deduped via coin_engine_themed_week_credits.
+  coin_engine_themed_week_bonus_per_post:
+    default: 100
+    client: true
+    min: 0
+    max: 10000
 
   # ===== v0.5.0: Goals (client-side primarily, but cap is server-enforced) =====
   coin_engine_goals_enabled:

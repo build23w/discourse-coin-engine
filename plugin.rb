@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.16.2
+# version: 0.17.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -246,6 +246,9 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/profile_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/insights_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/themed_week_controller.rb', __FILE__)
+  # v0.17.0 — themed-week reward dispatcher (post_created hook crediting bonus)
+  load File.expand_path('../app/models/discourse_coin_engine/themed_week_credit.rb', __FILE__)
+  load File.expand_path('../lib/discourse_coin_engine/themed_week_dispatcher.rb', __FILE__)
   # v0.6.0 phase controllers
   load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
@@ -699,6 +702,20 @@ after_initialize do
         ::DiscourseCoinEngine::BountyDispatcher.attempt_claim!(bounty, user, post)
       rescue StandardError => e
         Rails.logger.warn("[coin_engine] post_created bounty hook: #{e.class}: #{e.message}")
+      end
+    end
+
+    # v0.17.0 — themed-week bonus dispatcher. Fires on every post_created;
+    # the dispatcher checks whether a themed week is active and whether the
+    # post matches (in themed category OR contains themed hashtag), then
+    # credits a flat bonus (SiteSetting.coin_engine_themed_week_bonus_per_post)
+    # and pushes a MessageBus toast to the user. Idempotent on post_id.
+    # Wrapped in a rescue so a themed-week failure can never block posting.
+    DiscourseEvent.on(:post_created) do |post, _opts, user|
+      begin
+        ::DiscourseCoinEngine::ThemedWeekDispatcher.maybe_credit!(post, user)
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine] post_created themed_week hook: #{e.class}: #{e.message[0,200]}")
       end
     end
   end
