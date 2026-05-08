@@ -14,8 +14,16 @@ class CreateCoinEngineThemedWeekCredits < ActiveRecord::Migration[7.0]
       t.timestamps
     end
     # post_id is the dedupe key — one bonus per post, ever.
-    add_index :coin_engine_themed_week_credits, :post_id, unique: true
-    add_index :coin_engine_themed_week_credits, [:themed_week_name, :user_id]
-    add_index :coin_engine_themed_week_credits, :created_at
+    #
+    # Postgres caps index identifiers at 63 chars; Rails' default name is
+    # `index_<table>_on_<col1>_and_<col2>` which for this table + a compound
+    # column blows past the limit. Use explicit short names so migrations
+    # work on stock Postgres without bumping NAMEDATALEN.
+    add_index :coin_engine_themed_week_credits, :post_id,
+              unique: true, name: 'idx_themed_credits_post'
+    add_index :coin_engine_themed_week_credits, [:themed_week_name, :user_id],
+              name: 'idx_themed_credits_theme_user'
+    add_index :coin_engine_themed_week_credits, :created_at,
+              name: 'idx_themed_credits_created'
   end
 end

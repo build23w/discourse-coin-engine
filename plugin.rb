@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.17.0
+# version: 0.18.2
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -249,6 +249,8 @@ after_initialize do
   # v0.17.0 — themed-week reward dispatcher (post_created hook crediting bonus)
   load File.expand_path('../app/models/discourse_coin_engine/themed_week_credit.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/themed_week_dispatcher.rb', __FILE__)
+  # v0.18.0 — rich public-profile data builder
+  load File.expand_path('../lib/discourse_coin_engine/profile_builder.rb', __FILE__)
   # v0.6.0 phase controllers
   load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
@@ -638,6 +640,24 @@ after_initialize do
     rescue StandardError
       nil
     end
+  end
+
+  # v0.18.0 — Rich public-profile data for /u/{username}.
+  # Surfaces score, rank, streak, recent posts, badges, trophies, and
+  # wallet info so the theme component can render the social-media-style
+  # profile UI without making a separate XHR. Cached for 60s in
+  # ProfileBuilder so heavy fields don't re-derive on every page hit.
+  # Available on the regular UserSerializer (full /u/{username}.json) AND
+  # the lighter UserCardSerializer used on hover popups, mention cards, etc.
+  add_to_serializer(:user, :coin_engine_profile, include_condition: -> { SiteSetting.coin_engine_enabled }) do
+    ::DiscourseCoinEngine::ProfileBuilder.build(object)
+  rescue StandardError => e
+    Rails.logger.warn("[coin_engine] coin_engine_profile serializer failed for user_id=#{object&.id}: #{e.message[0,200]}")
+    {}
+  end
+  add_to_serializer(:user_card, :coin_engine_profile_compact, include_condition: -> { SiteSetting.coin_engine_enabled }) do
+    full = ::DiscourseCoinEngine::ProfileBuilder.build(object) rescue {}
+    full.slice(:score, :rank, :streak, :wallet, :verified_pro, :title)
   end
 
   # v0.5.0 — Themed-week summary (site-wide).
