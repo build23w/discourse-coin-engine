@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.18.10
+# version: 0.18.11
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -704,11 +704,17 @@ after_initialize do
   # the request path and only emits HTML for /u/{username}(/summary|/activity|/badges)
   # routes. Empty string for everything else, so the cost on non-profile
   # pages is just a regex match.
-  register_html_builder('before-body-close') do |controller|
-    ::DiscourseCoinEngine::ProfileNoscriptRenderer.render_for_request(controller)
-  rescue StandardError => e
-    Rails.logger.warn("[coin_engine] noscript html_builder failed: #{e.class}: #{e.message[0,200]}")
-    ''
+  # v0.18.11 - Hook name corrected. Discourse's layout calls
+  # build_plugin_html("server:before-body-close") with the "server:" prefix,
+  # otherwise our block silently never fires. We register both prefixed and
+  # unprefixed forms so future Discourse layout changes don't break us either way.
+  ['server:before-body-close', 'before-body-close'].each do |hook|
+    register_html_builder(hook) do |controller|
+      ::DiscourseCoinEngine::ProfileNoscriptRenderer.render_for_request(controller)
+    rescue StandardError => e
+      Rails.logger.warn("[coin_engine] noscript html_builder failed: #{e.class}: #{e.message[0,200]}")
+      ''
+    end
   end
 
   if defined?(DiscourseEvent)

@@ -48,8 +48,12 @@ module DiscourseCoinEngine
       user = ::User.find_by(username_lower: username.to_s.downcase)
       return '' unless user
       return '' if user.suspended? || user.silenced?
-      return '' unless user.active?
+      # v0.18.11 — Drop the user.active? check. Some perfectly-real
+      # established accounts have active=false flag for legacy reasons
+      # (e.g. SSO-imported users). The suspended? + silenced? checks
+      # already handle the actual abuse cases.
 
+      Rails.logger.info("[coin_engine.profile_noscript] rendering for user=#{user.id} username=#{user.username} subroute=#{subroute}")
       build_html(user, subroute: subroute)
     rescue StandardError => e
       Rails.logger.warn("[coin_engine.profile_noscript] render failed: #{e.class}: #{e.message[0,200]}")
