@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.18.11
+# version: 0.19.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -254,6 +254,9 @@ after_initialize do
   # v0.18.10 — server-rendered <noscript> fallback so bots / no-JS users
   # see the user's recent posts + stats without the SPA mounting.
   load File.expand_path('../lib/discourse_coin_engine/profile_noscript_renderer.rb', __FILE__)
+  # v0.19.0 - leaderboard live-query patch (replaces MV reads with a fresh
+  # GROUP BY on gamification_scores so FAB and leaderboard are always in sync).
+  load File.expand_path('../lib/discourse_coin_engine/leaderboard_live_query_patch.rb', __FILE__)
   # v0.6.0 phase controllers
   load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
@@ -715,6 +718,17 @@ after_initialize do
       Rails.logger.warn("[coin_engine] noscript html_builder failed: #{e.class}: #{e.message[0,200]}")
       ''
     end
+  end
+
+  # v0.19.0 - Prepend the leaderboard live-query patch onto
+  # DiscourseGamification::LeaderboardCachedView so all reads bypass the
+  # materialized view. Wrapped in defined? guards so the plugin still loads
+  # cleanly if discourse-gamification isn't installed.
+  if defined?(::DiscourseGamification) &&
+     defined?(::DiscourseGamification::LeaderboardCachedView) &&
+     !::DiscourseGamification::LeaderboardCachedView.include?(::DiscourseCoinEngine::LeaderboardLiveQueryPatch)
+    ::DiscourseGamification::LeaderboardCachedView.prepend(::DiscourseCoinEngine::LeaderboardLiveQueryPatch)
+    Rails.logger.info("[coin_engine] LeaderboardCachedView#scores patched - leaderboard reads gamification_scores live")
   end
 
   if defined?(DiscourseEvent)
