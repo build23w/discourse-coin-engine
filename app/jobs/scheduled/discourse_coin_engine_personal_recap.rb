@@ -12,17 +12,31 @@ module Jobs
 
       one_week_ago = 7.days.ago
 
+      # v0.19.3 — email_digests is on user_options in modern Discourse.
+      digest_user_ids = ::UserOption.where(email_digests: true).select(:user_id)
       User.real
           .activated
           .where(staged: false, suspended_till: nil, silenced_till: nil)
-          .where('email_digests = ?', true)
+          .where(id: digest_user_ids)
           .where('last_seen_at >= ?', 60.days.ago)
           .find_each(batch_size: 500) do |user|
         begin
           next unless user.email.present?
           next unless ::DiscourseCoinEngine::EmailThrottle.may_send?(user.id)
 
-          week_score = ::GamificationScore.where(user_id: user.id, date: one_week_ago.to_date..Date.today).sum(:score) rescue 0
+          # v0.19.3 — ::GamificationScore is no longer the canonical class name
+          # in current discourse-gamification (it's namespaced or absent on some
+          # installs). The previous `rescue 0` silently zeroed every user, so
+          # `next if week_score < 10` skipped 100% of recipients. Use raw SQL
+          # against gamification_scores like the rest of the plugin does.
+          week_score = begin
+            sql = "SELECT COALESCE(SUM(score), 0)::int AS total FROM gamification_scores WHERE user_id = $1 AND date >= $2 AND date <= $3"
+            r = ::ActiveRecord::Base.connection.exec_query(sql, 'coin_engine_personal_recap_week', [user.id, one_week_ago.to_date, Date.today])
+            (r.rows.first && r.rows.first.first || 0).to_i
+          rescue StandardError => e
+            Rails.logger.warn "[coin-engine] personal recap week_score failed for user_id=#{user.id}: #{e.class}: #{e.message}"
+            0
+          end
           next if week_score < 10  # don't email users who barely participated
 
           recent_badges = UserBadge.where(user_id: user.id)

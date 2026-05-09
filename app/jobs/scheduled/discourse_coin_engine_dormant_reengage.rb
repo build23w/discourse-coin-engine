@@ -21,9 +21,11 @@ module Jobs
                           .limit(5)
                           .pluck(:id, :title, :slug, :views)
 
+      # v0.19.3 — email_digests is on user_options in modern Discourse.
+      digest_user_ids = ::UserOption.where(email_digests: true).select(:user_id)
       User.real.activated
           .where(staged: false, suspended_till: nil, silenced_till: nil)
-          .where('email_digests = ?', true)
+          .where(id: digest_user_ids)
           .where('last_seen_at < ? AND last_seen_at > ?', cutoff_recent, cutoff_floor)
           .find_each(batch_size: 500) do |user|
         begin

@@ -20,9 +20,11 @@ module Jobs
                                       .distinct
                                       .pluck(:user_id)
 
+      # v0.19.3 — email_digests is on user_options in modern Discourse.
+      digest_user_ids = ::UserOption.where(email_digests: true).select(:user_id)
       User.real.activated
           .where(id: candidate_user_ids, staged: false, suspended_till: nil, silenced_till: nil)
-          .where('email_digests = ?', true)
+          .where(id: digest_user_ids)
           .find_each(batch_size: 200) do |user|
         begin
           calc = ::DiscourseCoinEngine::StreakCalculator.new(user_id: user.id)

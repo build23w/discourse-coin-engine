@@ -19,10 +19,13 @@ module Jobs
       this_rank_by_id = this_all.each_with_object({}) { |r, h| h[r[:user_id]] = r[:rank] }
       last_rank_by_id = last_excl.each_with_object({}) { |r, h| h[r[:user_id]] = r[:rank] }
 
+      # v0.19.3 — email_digests lives on user_options in modern Discourse,
+      # not users. Subquery against UserOption.
+      digest_user_ids = ::UserOption.where(email_digests: true).select(:user_id)
       User.real
           .activated
           .where(staged: false, suspended_till: nil, silenced_till: nil)
-          .where('email_digests = ?', true)
+          .where(id: digest_user_ids)
           .find_each(batch_size: 500) do |user|
         next unless user.email.present?
         next unless ::DiscourseCoinEngine::EmailThrottle.may_send?(user.id)
