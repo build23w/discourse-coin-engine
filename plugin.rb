@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.19.3
+# version: 0.19.4
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -316,6 +316,8 @@ after_initialize do
   # v0.10.1: Verified Pro admin queue + on-approval cascade
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_verified_pros_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminVerifiedProsController.layout false if defined?(DiscourseCoinEngine::AdminVerifiedProsController)
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_tournaments_controller.rb', __FILE__)
+  DiscourseCoinEngine::AdminTournamentsController.layout false if defined?(DiscourseCoinEngine::AdminTournamentsController)
 
   # v0.11.0: custodial wallets + withdraw requests
   load File.expand_path('../lib/discourse_coin_engine/wallet_encryption.rb', __FILE__)
@@ -376,6 +378,9 @@ after_initialize do
     # Mods bookmark /admin/coin-engine -- that's the full payments UI.
     get  '/admin/coin-engine'                                        => 'discourse_coin_engine/admin_payments#index'
     get  '/admin/coin-engine/embed'                                  => 'discourse_coin_engine/admin_payments#embed'
+    get    '/admin/coin-engine/tournaments.json'                    => 'discourse_coin_engine/admin_tournaments#index'
+    post   '/admin/coin-engine/tournaments.json'                    => 'discourse_coin_engine/admin_tournaments#create'
+    delete '/admin/coin-engine/tournaments/:slug.json'              => 'discourse_coin_engine/admin_tournaments#destroy', constraints: { slug: %r{[a-zA-Z0-9_\-]+} }
     get  '/admin/coin-engine/payments.json'                          => 'discourse_coin_engine/admin_payments#list'
     get  '/admin/coin-engine/users/search.json'                      => 'discourse_coin_engine/admin_payments#search_users'
     get  '/admin/coin-engine/users/:id/payments.json'                => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
