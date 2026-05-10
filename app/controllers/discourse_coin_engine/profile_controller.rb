@@ -22,6 +22,16 @@ module DiscourseCoinEngine
       @user = User.find_by(username_lower: params[:username].to_s.downcase)
       return render plain: 'User not found', status: 404 unless @user
 
+      # v0.20.0 — HTML requests redirect to the native Discourse summary page.
+      # The native /u/{username}/summary is richly styled by lfProfile (theme
+      # component) and serves the same SEO purpose as our showcase HTML did,
+      # but without the missing-template breakage that hits when a controller
+      # outside the plugin view path tries to render an .erb. JSON responses
+      # stay intact for any API consumers.
+      if request.format.html?
+        return redirect_to "/u/#{@user.username}/summary", allow_other_host: false, status: :see_other
+      end
+
       @username    = @user.username
       @display     = @user.name.presence || @user.username
       @bio         = (@user.user_profile&.bio_excerpt(400, keep_newlines: true) rescue nil).to_s

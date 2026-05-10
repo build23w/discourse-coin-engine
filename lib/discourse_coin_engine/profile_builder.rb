@@ -71,6 +71,7 @@ module DiscourseCoinEngine
         recent_posts:    recent_posts_for(user),
         top_badges:      top_badges_for(user),
         top_trophies:    top_trophies_for(user),
+        trophy_count:    trophy_count_for(user),
         themed_credits:  themed_credit_count_for(user),
         # Verified Pro flag if the plugin tracks it (gracefully nil if not set)
         verified_pro:    verified_pro_for(user),
@@ -295,24 +296,47 @@ module DiscourseCoinEngine
     # ----- trophies (custom achievements / quest unlocks) -----
 
     def top_trophies_for(user)
-      # The plugin tracks custom achievements in coin_engine_achievements_unlocked
-      # IF that table exists. Gracefully no-op otherwise.
-      return [] unless ::ActiveRecord::Base.connection.data_source_exists?('coin_engine_achievements_unlocked')
+      # v0.20.0 — Real source: coin_engine_quest_claims. Each row is one
+      # server-verified quest/milestone the user actually earned (idempotent
+      # via unique (user_id, quest_id)). Older code looked at a non-existent
+      # table `coin_engine_achievements_unlocked`, which made every profile
+      # report 0 trophies regardless of activity. Show the highest-value
+      # claims (XP DESC) so the public profile leads with the user's
+      # most impressive earns.
+      return [] unless ::ActiveRecord::Base.connection.data_source_exists?('coin_engine_quest_claims')
 
       rows = ::ActiveRecord::Base.connection.exec_query(
-        "SELECT achievement_id, unlocked_at FROM coin_engine_achievements_unlocked " \
-        "WHERE user_id = #{user.id.to_i} ORDER BY unlocked_at DESC LIMIT #{TROPHIES_LIMIT}"
+        "SELECT quest_id, category, xp_granted, reno_granted, created_at " \
+        "FROM coin_engine_quest_claims " \
+        "WHERE user_id = #{user.id.to_i} " \
+        "ORDER BY xp_granted DESC, created_at DESC LIMIT #{TROPHIES_LIMIT}"
       ).to_a
       rows.map do |r|
+        qid = r['quest_id'].to_s
         {
-          id:          r['achievement_id'],
-          name:        r['achievement_id'].to_s.tr('_', ' ').capitalize,
-          unlocked_at: r['unlocked_at']&.iso8601,
+          id:          qid,
+          name:        qid.tr('_', ' ').capitalize,
+          category:    r['category'],
+          xp:          r['xp_granted'].to_i,
+          reno:        r['reno_granted'].to_i,
+          unlocked_at: (r['created_at'].respond_to?(:iso8601) ? r['created_at'].iso8601 : r['created_at'].to_s),
         }
       end
     rescue StandardError => e
       Rails.logger.warn("[coin_engine.profile] top_trophies failed: #{e.message[0,160]}")
       []
+    end
+
+    # v0.20.0 — Total claim count (for the "Trophies: N" stat on profile).
+    # Cheap COUNT query, no row materialization. Distinct from top_trophies_for
+    # which returns the leaderboard of best earns.
+    def trophy_count_for(user)
+      return 0 unless ::ActiveRecord::Base.connection.data_source_exists?('coin_engine_quest_claims')
+      ::ActiveRecord::Base.connection.exec_query(
+        "SELECT COUNT(*) AS n FROM coin_engine_quest_claims WHERE user_id = #{user.id.to_i}"
+      ).rows.first&.first.to_i
+    rescue StandardError
+      0
     end
 
     def themed_credit_count_for(user)
