@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# v0.9.0 — Server-side quest validator. Mirrors the catalog the client widget
+# v0.20.0 Path A — Server-side quest validator. Mirrors the catalog the client widget
 # tracks (in hrr-ux-pack body_tag.html) so claims can be verified against the
 # actual user record before granting any reward. Trust nothing the client sends
 # beyond the quest_id itself.
@@ -100,10 +100,13 @@ module DiscourseCoinEngine
           return stats['days_visited'].to_i >= 1 ? ok('onboarding', 10, 25) : invalid('no days visited')
         end
 
-        # 7. Charity quests (samm_*) — trust client (these are local action flags)
-        # Capped at small reward each so abuse is bounded.
+        # 7. v0.20.0 Path A — Charity samm_* quests use client-only localStorage
+        # flags (samm_visit, samm_cheer, samm_donate, samm_share, samm_dayone).
+        # Server has no source of truth for these, so they are trophy-only on
+        # the client and rejected here. Re-enable when server-side flag tracking
+        # ships (proposed v0.21.0).
         if quest_id.start_with?('samm_')
-          return ok('charity', 100, 500)
+          return invalid('charity flags client-only, trophy-only no XP/RENO grant')
         end
 
         # 8. Milestones (ms_*) — verified by claim count
@@ -170,18 +173,47 @@ module DiscourseCoinEngine
       end
 
       def validate_milestone(user, quest_id)
+        # v0.20.0 Path A — only server-verifiable milestones grant XP/RENO.
+        # ms_charity_hero (5 client localStorage flags) and ms_perfectionist
+        # (catalog-relative "ALL quests") have no server source of truth, so
+        # they are trophy-only on the client and rejected here.
+        if quest_id == 'ms_charity_hero' || quest_id == 'ms_perfectionist'
+          return invalid('client-only state, trophy-only no XP/RENO grant')
+        end
+
+        # ms_balanced / ms_balanced_500 — both likes_given AND likes_received >= N
+        if (m = quest_id.match(/\Ams_balanced(?:_(\d+))?\z/))
+          thr = m[1] ? m[1].to_i : 100
+          ustat = user.user_stat
+          given = ustat&.likes_given.to_i
+          recv  = ustat&.likes_received.to_i
+          return invalid("likes_given=#{given} or likes_received=#{recv} < #{thr}") if given < thr || recv < thr
+          xp   = thr >= 500 ? 5_000  : 1_000
+          reno = thr >= 500 ? 15_000 : 3_000
+          return ok('milestone', xp, reno)
+        end
+
+        # Server-verifiable claim-count milestones
         thresholds = {
           'ms_completionist_50'  => [50,    5_000,  15_000],
           'ms_completionist_100' => [100,  10_000,  25_000],
           'ms_completionist_150' => [150,  15_000,  40_000],
-          'ms_grand_slam'        => [200,  25_000,  50_000],  # capped at MAX_RENO
-          'ms_perfectionist'     => [9999, 50_000,  50_000],  # very large quest count + capped reno
+          'ms_grand_slam'        => [200,  25_000,  50_000],
         }
-        # Charity hero is a flag-based check — trust client's own claim
-        return ok('milestone', 5_000, 15_000) if quest_id == 'ms_charity_hero'
-        # Streak quests
-        if quest_id.start_with?('streak_')
-          return ok('streaks', 200, 500) # simple flat reward; trust client streak counter
+
+        # Streak quests — server-verified via StreakCalculator (reads
+        # gamification_scores dates, not client counter)
+        if (m = quest_id.match(/\Astreak_(\d+)\z/))
+          thr = m[1].to_i
+          actual = begin
+            ::DiscourseCoinEngine::StreakCalculator.new(user_id: user.id).current
+          rescue StandardError
+            0
+          end
+          return invalid("streak=#{actual} < #{thr}") if actual < thr
+          xp   = (thr * 30).clamp(50, MAX_XP_PER_CLAIM)
+          reno = (thr * 75).clamp(100, MAX_RENO_PER_CLAIM)
+          return ok('streaks', xp, reno)
         end
 
         if thresholds.key?(quest_id)
