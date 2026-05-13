@@ -102,7 +102,90 @@ module DiscourseCoinEngine
         end
       end
 
+      # v0.20.0 — Persist the airdrop to the admin ledger. Failures here must
+      # not break the response: the credit already landed, the email already
+      # fired, etc. Just log and continue.
+      begin
+        ::DiscourseCoinEngine::AdminAirdrop.create!(
+          user_id:         user.id,
+          admin_user_id:   current_user.id,
+          amount:          amount,
+          reason:          reason[0, 280],
+          source:          source[0, 60],
+          score_credited:  results[:score_credited],
+          ledger_appended: results[:ledger_appended],
+          email_sent:      results[:email_sent],
+          webhook_posted:  results[:webhook_posted],
+        )
+      rescue StandardError => e
+        Rails.logger.warn "[coin-engine] admin airdrop ledger write failed: #{e.class}: #{e.message}"
+      end
+
       render json: { ok: true, username: user.username, amount: amount, reason: reason, results: results }
+    end
+
+    # GET /admin/coin-engine/airdrops.json
+    # Params: page (1-indexed, default 1), q (recipient username LIKE filter,
+    # optional), limit (default 20, cap 100). Returns paginated airdrop ledger
+    # for the admin UI.
+    def list
+      raise Discourse::NotFound unless SiteSetting.coin_engine_enabled
+
+      page  = [params[:page].to_i, 1].max
+      limit = [[(params[:limit].presence || 20).to_i, 1].max, 100].min
+      q     = params[:q].to_s.strip.downcase
+      offset = (page - 1) * limit
+
+      scope = ::DiscourseCoinEngine::AdminAirdrop.recent
+
+      if q.length > 0
+        # Resolve username LIKE against ::User, scope airdrops to those user_ids.
+        ids = ::User.where("LOWER(username) LIKE ?", "%#{q}%").limit(500).pluck(:id)
+        scope = scope.where(user_id: ids)
+      end
+
+      total = scope.count
+      rows  = scope.limit(limit).offset(offset).to_a
+
+      # Bulk-load both recipient + admin user records once
+      uids  = rows.flat_map { |r| [r.user_id, r.admin_user_id] }.uniq
+      users = ::User.where(id: uids).index_by(&:id)
+
+      items = rows.map do |r|
+        recipient = users[r.user_id]
+        issuer    = users[r.admin_user_id]
+        {
+          id:               r.id,
+          created_at:       r.created_at.iso8601,
+          amount:           r.amount,
+          reason:           r.reason,
+          source:           r.source,
+          recipient: recipient ? {
+            id:              recipient.id,
+            username:        recipient.username,
+            name:            recipient.name,
+            avatar_template: recipient.avatar_template,
+          } : { id: r.user_id, username: '(deleted)', name: nil, avatar_template: nil },
+          admin: issuer ? {
+            id:       issuer.id,
+            username: issuer.username,
+          } : { id: r.admin_user_id, username: '(unknown)' },
+          results: {
+            score_credited:  r.score_credited,
+            ledger_appended: r.ledger_appended,
+            email_sent:      r.email_sent,
+            webhook_posted:  r.webhook_posted,
+          },
+        }
+      end
+
+      render json: {
+        items: items,
+        page:  page,
+        limit: limit,
+        total: total,
+        q:     q,
+      }
     end
 
     private

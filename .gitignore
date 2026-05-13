@@ -1,0 +1,25 @@
+# Secrets / one-off scripts that may contain API keys.
+# Never commit ad-hoc scripts to this repo — keep them in a private workspace
+# folder OR rewrite them to read keys from ENV before committing.
+*.local.py
+*_with_key.py
+*_secrets.*
+secrets.*
+.env
+.env.*
+.env.local
+seed_*.py            # ad-hoc seed scripts — keep these out of the repo entirely
+
+# Sidekick stuff
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Backup files from incremental edits
+*.bak.*
+*.bak
+*.tmp

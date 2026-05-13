@@ -113,6 +113,7 @@
     <button class="ce-tab" data-tab="verified_pros">🎖 Verified Pros <span class="ce-badge" id="ce-vp-badge" hidden></span></button>
     <button class="ce-tab" data-tab="withdraw_requests">💰 Withdraw Requests <span class="ce-badge" id="ce-wr-badge" hidden></span></button>
     <button class="ce-tab" data-tab="store">🛍️ Store <span class="ce-badge" id="ce-store-badge" hidden></span></button>
+    <button class="ce-tab" data-tab="airdrops">🪂 Airdrops</button>
   </nav>
 
   <!-- Panels -->
@@ -288,6 +289,27 @@
   </div>
 </div>
 
+  <div class="ce-panel" id="ce-pane-airdrops" hidden>
+    <h2>Airdrop ledger</h2>
+    <p class="ce-sub">Every admin-issued airdrop via <code>POST /coin-engine/admin/airdrop.json</code>. One row per send, with side-effect status (score credited, ledger appended, email sent, webhook posted). Search by recipient username.</p>
+    <div class="ce-toolbar">
+      <input type="text" class="ce-input" id="ce-ad-q" placeholder="Search by recipient username..." style="max-width:300px">
+      <span style="flex:1"></span>
+      <span class="ce-sub" id="ce-ad-info">—</span>
+    </div>
+    <table class="ce-table" id="ce-ad-table">
+      <thead><tr><th>When</th><th>Recipient</th><th class="ce-num">Amount</th><th>Reason</th><th>Source</th><th>Issued by</th><th>Effects</th></tr></thead>
+      <tbody id="ce-ad-body"><tr><td colspan="7" class="ce-empty">Loading...</td></tr></tbody>
+    </table>
+    <div class="ce-pgn">
+      <span id="ce-ad-page-info">—</span>
+      <div class="ce-pgn-btns">
+        <button class="ce-pgn-btn" id="ce-ad-prev" disabled>← Prev</button>
+        <button class="ce-pgn-btn" id="ce-ad-next" disabled>Next →</button>
+      </div>
+    </div>
+  </div>
+
 <script nonce="<%= csp_nonce_placeholder %>">
 (function(){
   if (window.__lfCEAdminLoaded) return; window.__lfCEAdminLoaded = true;
@@ -323,7 +345,7 @@
       $$('.ce-tab').forEach(function(x){ x.classList.remove('is-active'); });
       b.classList.add('is-active');
       var k = b.getAttribute('data-tab');
-      ['pay','recent','users','mints','verified_pros','withdraw_requests','store'].forEach(function(t){
+      ['pay','recent','users','mints','verified_pros','withdraw_requests','store','airdrops'].forEach(function(t){
         var pane = $('#ce-pane-' + t);
         if (pane) pane.hidden = (t !== k);
       });
@@ -332,6 +354,7 @@
       if (k === 'mints'  && !state.mintsLoaded)  loadMints();
       if (k === 'withdraw_requests') loadWithdrawRequests(wrState.filter);
       if (k === 'store') loadStoreItems();
+      if (k === 'airdrops') loadAirdrops();
     });
   });
 
@@ -1175,6 +1198,78 @@
   document.querySelectorAll('.ce-tab[data-tab="verified_pros"]').forEach(function(t){
     t.addEventListener('click', function(){ vpLoad(vpState.filter); });
   });
+
+
+  // ---------- Airdrops tab (v0.20.0) ----------
+  // GET /admin/coin-engine/airdrops.json?page=N&q=username&limit=25
+  // Server returns: { items: [...], page, limit, total, q }
+  var adState = { page: 1, q: '', limit: 25, loadedOnce: false, debounce: null };
+
+  function fmtEffects(eff){
+    var pills = [];
+    function pill(ok, label){
+      var color = ok ? '#2a7d39' : '#b32424';
+      var bg    = ok ? 'rgba(42,125,57,.10)' : 'rgba(179,36,36,.10)';
+      var mark  = ok ? '✓' : '✗';
+      return '<span style="display:inline-block;padding:1px 6px;border-radius:6px;background:'+bg+';color:'+color+';font-size:10.5px;font-weight:700;margin-right:3px">'+mark+' '+label+'</span>';
+    }
+    pills.push(pill(eff.score_credited,  'credit'));
+    pills.push(pill(eff.ledger_appended, 'ledger'));
+    pills.push(pill(eff.email_sent,      'email'));
+    pills.push(pill(eff.webhook_posted,  'hook'));
+    return pills.join('');
+  }
+
+  function loadAirdrops(){
+    var body = $('#ce-ad-body');
+    body.innerHTML = '<tr><td colspan="7" class="ce-empty">Loading...</td></tr>';
+    var url = '/admin/coin-engine/airdrops.json?page=' + adState.page + '&limit=' + adState.limit;
+    if (adState.q) url += '&q=' + encodeURIComponent(adState.q);
+    get(url).then(function(d){
+      adState.loadedOnce = true;
+      var items = (d && d.items) || [];
+      if (!items.length){
+        body.innerHTML = '<tr><td colspan="7" class="ce-empty">'+
+          (adState.q ? 'No airdrops match "'+esc(adState.q)+'".' : 'No airdrops yet. Issue one via POST /coin-engine/admin/airdrop.json or any tool that hits that endpoint.')+
+          '</td></tr>';
+      } else {
+        body.innerHTML = items.map(function(r){
+          var rcp = r.recipient || {};
+          var adm = r.admin || {};
+          var amtClass = r.amount < 0 ? 'color:#b32424' : 'color:#2a7d39';
+          var amtStr = (r.amount > 0 ? '+' : '') + fmtN(r.amount);
+          return '<tr>'+
+            '<td>'+ fmtRel(r.created_at) +'</td>'+
+            '<td><a href="/u/'+ esc(rcp.username || '') +'" target="_blank">@'+ esc(rcp.username || '?') +'</a></td>'+
+            '<td class="ce-num" style="'+amtClass+';font-weight:800">'+ amtStr +'</td>'+
+            '<td>'+ esc(r.reason || '') +'</td>'+
+            '<td>'+ esc(r.source || '') +'</td>'+
+            '<td>@'+ esc(adm.username || '?') +'</td>'+
+            '<td>'+ fmtEffects(r.results || {}) +'</td>'+
+          '</tr>';
+        }).join('');
+      }
+      var total = d && d.total != null ? d.total : 0;
+      $('#ce-ad-info').textContent = total ? (total + ' total airdrops' + (adState.q ? ' matching "'+adState.q+'"' : '')) : '';
+      $('#ce-ad-page-info').textContent = 'Page ' + adState.page + (total ? ' · ' + total + ' total' : '');
+      $('#ce-ad-prev').disabled = adState.page <= 1;
+      $('#ce-ad-next').disabled = (adState.page * adState.limit) >= total;
+    }).catch(function(){
+      body.innerHTML = '<tr><td colspan="7" class="ce-empty">Failed to load. Retry.</td></tr>';
+    });
+  }
+
+  $('#ce-ad-q').addEventListener('input', function(e){
+    clearTimeout(adState.debounce);
+    var v = e.target.value.trim();
+    adState.debounce = setTimeout(function(){
+      adState.q = v;
+      adState.page = 1;
+      loadAirdrops();
+    }, 280);
+  });
+  $('#ce-ad-prev').addEventListener('click', function(){ if (adState.page > 1){ adState.page--; loadAirdrops(); }});
+  $('#ce-ad-next').addEventListener('click', function(){ adState.page++; loadAirdrops(); });
 
 })();
 </script>

@@ -280,6 +280,8 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/daily_chest.rb', __FILE__)
   # v0.9.0: server-verified quest reward claims
   load File.expand_path('../app/models/discourse_coin_engine/quest_claim.rb', __FILE__)
+  # v0.20.0 — Admin airdrop ledger row (one per /admin/airdrop.json POST)
+  load File.expand_path('../app/models/discourse_coin_engine/admin_airdrop.rb', __FILE__)
 
   # v0.4.0: registers the sidebar link AND the modern plugin-show route. We ship
   # a connector at admin/assets/javascripts/discourse/connectors/admin-plugin-config-page-coin-engine/
@@ -370,6 +372,9 @@ after_initialize do
     get  '/coin-engine/user/:username/recap.json'        => 'discourse_coin_engine/user_recap#show', constraints: { username: username_re }
     get  '/coin-engine/user/:username/streak.json'       => 'discourse_coin_engine/streak#show',     constraints: { username: username_re }
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
+    # v0.20.0 — Admin airdrop ledger (paginated + username search)
+    get  '/coin-engine/admin/airdrops.json'              => 'discourse_coin_engine/admin_airdrop#list'
+    get  '/admin/coin-engine/airdrops.json'              => 'discourse_coin_engine/admin_airdrop#list'
 
     # ===== Admin UI for manual payments =====
     # Under /admin/ so Admin::AdminController's session/CSRF/layout assumptions
