@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
-# v0.12.2 - User staking endpoints. Phantom-signed SOL transfer to the staking
+# v0.21.0 — User staking endpoints. Phantom-signed SOL transfer to the staking
 # treasury wallet. Stake records track lock-up duration; admin records the
 # return tx when the user unstakes.
+#
+# IMPORTANT: this controller manages ON-CHAIN SOL stakes — table
+# coin_engine_sol_stakes, model ::DiscourseCoinEngine::SolStake.
+# The bare `Stake` constant in this namespace resolves to the Phase 2 in-platform
+# $RENO stake (bounty.rb, table coin_engine_stakes) which has totally different
+# columns (`amount`, `multiplier`, `unlocks_at`) and silently 500s when fed SOL
+# fields. Always reference SolStake explicitly here.
 
 module DiscourseCoinEngine
   class StakingController < ::ApplicationController
@@ -20,8 +27,8 @@ module DiscourseCoinEngine
 
     # GET /coin-engine/staking/stakes.json
     def index
-      stakes = Stake.for_user(current_user.id).recent.limit(50)
-      total_active_lamports = Stake.for_user(current_user.id).active.sum(:amount_lamports).to_i
+      stakes = SolStake.for_user(current_user.id).recent.limit(50)
+      total_active_lamports = SolStake.for_user(current_user.id).active.sum(:amount_lamports).to_i
       render json: {
         stakes: stakes.map(&:serialize_for_user),
         total_active_lamports: total_active_lamports,
@@ -58,7 +65,7 @@ module DiscourseCoinEngine
 
       Rails.logger.info("[coin_engine.staking] initiate user=#{current_user.id} amount=#{amount} duration=#{duration}")
 
-      stake = Stake.create!(
+      stake = SolStake.create!(
         user_id:         current_user.id,
         amount_lamports: amount,
         wallet_address:  wallet,
@@ -87,7 +94,7 @@ module DiscourseCoinEngine
       raise ::Discourse::InvalidParameters, 'stake_id' if sid <= 0
       raise ::Discourse::InvalidParameters, 'tx_signature' if sig.length < 60 || sig.length > 100
 
-      stake = Stake.find_by(id: sid, user_id: current_user.id)
+      stake = SolStake.find_by(id: sid, user_id: current_user.id)
       raise ::Discourse::NotFound unless stake
       return render json: { ok: true, stake: stake.serialize_for_user, already: true } unless stake.status == 'pending'
 
@@ -109,7 +116,7 @@ module DiscourseCoinEngine
     def unstake_request
       RateLimiter.new(current_user, 'coin_engine_stake_unstake', 5, 1.hour).performed!
 
-      stake = Stake.find_by(id: params[:stake_id].to_i, user_id: current_user.id)
+      stake = SolStake.find_by(id: params[:stake_id].to_i, user_id: current_user.id)
       raise ::Discourse::NotFound unless stake
       return render json: { errors: ["Not yet unlockable. #{stake.days_until_unlock} days left."] }, status: 422 unless stake.unlockable?
       return render json: { errors: ['Stake not in active state.'] }, status: 422 unless stake.status == 'active'
