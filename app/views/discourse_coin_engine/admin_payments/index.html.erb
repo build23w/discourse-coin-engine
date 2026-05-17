@@ -114,6 +114,7 @@
     <button class="ce-tab" data-tab="withdraw_requests">💰 Withdraw Requests <span class="ce-badge" id="ce-wr-badge" hidden></span></button>
     <button class="ce-tab" data-tab="store">🛍️ Store <span class="ce-badge" id="ce-store-badge" hidden></span></button>
     <button class="ce-tab" data-tab="airdrops">🪂 Airdrops</button>
+    <button class="ce-tab" data-tab="stake_dist">🎁 Stake Distributions</button>
   </nav>
 
   <!-- Panels -->
@@ -310,6 +311,51 @@
     </div>
   </div>
 
+
+  <div class="ce-panel" id="ce-pane-stake_dist" hidden>
+    <h2>Stake-yield distributions</h2>
+    <p class="ce-sub">
+      Whitepaper §5.2 staker-share mechanism. Each distribution snapshots currently active SOL stakers, allocates the entered $RENO pool pro-rata by lamports staked, and writes one payout row per eligible user. Users then claim from the FAB <em>Stake</em> tab — that credits gamification_scores from the admin-funded staking reserve. <strong>Pure internal accounting</strong> — no on-chain transfer, no market action.
+    </p>
+
+    <div class="ce-card" style="margin-bottom:16px;padding:16px;border-radius:10px;background:#fff;border:1px solid rgba(0,0,0,.08)">
+      <h3 style="margin:0 0 10px">Create distribution</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label class="ce-label">Period label <small style="opacity:.7">(unique)</small></label>
+          <input type="text" class="ce-input" id="ce-sd-period" placeholder="e.g. 2026-W22 or May-2026" maxlength="60">
+        </div>
+        <div>
+          <label class="ce-label">Total $RENO pool</label>
+          <input type="number" class="ce-input" id="ce-sd-total" placeholder="e.g. 50000" min="1" step="1">
+        </div>
+      </div>
+      <label class="ce-label">Notes <small style="opacity:.7">(optional, internal)</small></label>
+      <textarea class="ce-input" id="ce-sd-notes" rows="2" placeholder="Source of funds, period context, etc." maxlength="4000"></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px">
+        <p class="ce-sub" id="ce-sd-status" style="margin:0">—</p>
+        <button class="ce-btn ce-btn-primary" id="ce-sd-create">Snapshot &amp; allocate</button>
+      </div>
+    </div>
+
+    <div class="ce-toolbar">
+      <strong>Recent distributions</strong>
+      <span style="flex:1"></span>
+      <span class="ce-sub" id="ce-sd-info">—</span>
+    </div>
+    <table class="ce-table" id="ce-sd-table">
+      <thead><tr><th>Period</th><th>Status</th><th class="ce-num">Total $RENO</th><th class="ce-num">Stakers</th><th>Claimed</th><th>Admin</th><th>When</th><th></th></tr></thead>
+      <tbody id="ce-sd-body"><tr><td colspan="8" class="ce-empty">Loading...</td></tr></tbody>
+    </table>
+    <div class="ce-pgn">
+      <span id="ce-sd-page-info">—</span>
+      <div class="ce-pgn-btns">
+        <button class="ce-pgn-btn" id="ce-sd-prev" disabled>← Prev</button>
+        <button class="ce-pgn-btn" id="ce-sd-next" disabled>Next →</button>
+      </div>
+    </div>
+  </div>
+
 <script nonce="<%= csp_nonce_placeholder %>">
 (function(){
   if (window.__lfCEAdminLoaded) return; window.__lfCEAdminLoaded = true;
@@ -345,7 +391,7 @@
       $$('.ce-tab').forEach(function(x){ x.classList.remove('is-active'); });
       b.classList.add('is-active');
       var k = b.getAttribute('data-tab');
-      ['pay','recent','users','mints','verified_pros','withdraw_requests','store','airdrops'].forEach(function(t){
+      ['pay','recent','users','mints','verified_pros','withdraw_requests','store','airdrops','stake_dist'].forEach(function(t){
         var pane = $('#ce-pane-' + t);
         if (pane) pane.hidden = (t !== k);
       });
@@ -355,6 +401,7 @@
       if (k === 'withdraw_requests') loadWithdrawRequests(wrState.filter);
       if (k === 'store') loadStoreItems();
       if (k === 'airdrops') loadAirdrops();
+      if (k === 'stake_dist') loadStakeDistributions();
     });
   });
 
@@ -1270,6 +1317,107 @@
   });
   $('#ce-ad-prev').addEventListener('click', function(){ if (adState.page > 1){ adState.page--; loadAirdrops(); }});
   $('#ce-ad-next').addEventListener('click', function(){ adState.page++; loadAirdrops(); });
+
+  // ---------- Stake Distributions tab (v0.21.0) ----------
+  // GET /admin/coin-engine/stake_distributions.json?page=N&limit=20
+  // POST /admin/coin-engine/stake_distributions.json {period_label,total_amount,notes}
+  // DELETE /admin/coin-engine/stake_distributions/:id.json
+  var sdState = { page: 1, limit: 20, loadedOnce: false };
+
+  function statusPill(st){
+    var colors = {
+      pending:   ['#5a4308', 'rgba(212, 156, 30, .18)'],
+      computed:  ['#08407a', 'rgba(8, 64, 122, .12)'],
+      completed: ['#1f6f3a', 'rgba(31, 111, 58, .12)'],
+      failed:    ['#a01818', 'rgba(160, 24, 24, .12)']
+    };
+    var c = colors[st] || ['#444','rgba(0,0,0,.06)'];
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;color:'+c[0]+';background:'+c[1]+'">'+esc(st||'?')+'</span>';
+  }
+
+  function loadStakeDistributions(){
+    var body = $('#ce-sd-body');
+    body.innerHTML = '<tr><td colspan="8" class="ce-empty">Loading...</td></tr>';
+    var url = '/admin/coin-engine/stake_distributions.json?page='+sdState.page+'&limit='+sdState.limit;
+    get(url).then(function(d){
+      sdState.loadedOnce = true;
+      var items = (d && d.items) || [];
+      if (!items.length){
+        body.innerHTML = '<tr><td colspan="8" class="ce-empty">No stake distributions yet. Create one above.</td></tr>';
+      } else {
+        body.innerHTML = items.map(function(r){
+          var canDelete = (r.status === 'pending' || r.status === 'failed');
+          var del = canDelete ? '<button class="ce-btn" data-sd-del="'+r.id+'" style="padding:4px 10px;font-size:11px">Delete</button>' : '';
+          var claimedFrac = (r.stakers_count > 0)
+            ? (r.claimed_count || 0) + ' / ' + r.stakers_count
+            : '—';
+          return '<tr>'+
+            '<td><strong>'+esc(r.period_label||'')+'</strong></td>'+
+            '<td>'+statusPill(r.status)+'</td>'+
+            '<td class="ce-num">'+fmtN(r.total_amount)+'</td>'+
+            '<td class="ce-num">'+fmtN(r.stakers_count||0)+'</td>'+
+            '<td>'+claimedFrac+'</td>'+
+            '<td>@'+esc(r.admin_username||'?')+'</td>'+
+            '<td>'+fmtRel(r.created_at)+'</td>'+
+            '<td>'+del+'</td>'+
+          '</tr>';
+        }).join('');
+      }
+      var total = d && d.total != null ? d.total : 0;
+      $('#ce-sd-info').textContent = total ? (total + ' total distributions') : '';
+      $('#ce-sd-page-info').textContent = 'Page ' + sdState.page + (total ? ' · ' + total + ' total' : '');
+      $('#ce-sd-prev').disabled = sdState.page <= 1;
+      $('#ce-sd-next').disabled = (sdState.page * sdState.limit) >= total;
+      body.querySelectorAll('[data-sd-del]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var id = btn.getAttribute('data-sd-del');
+          if (!confirm('Delete this distribution? Only pending/failed rows can be removed.')) return;
+          btn.disabled = true;
+          fetch('/admin/coin-engine/stake_distributions/'+id+'.json', {
+            method:'DELETE', credentials:'same-origin',
+            headers:{ 'Accept':'application/json', 'X-CSRF-Token': csrf() }
+          }).then(function(r){ return r.json().then(function(j){ return r.ok ? j : Promise.reject(j); }); })
+            .then(function(){ toast('Distribution deleted', 'ok'); loadStakeDistributions(); })
+            .catch(function(e){ toast('Delete failed: '+((e && e.errors && e.errors[0])||'?'), 'err'); btn.disabled = false; });
+        });
+      });
+    }).catch(function(){
+      body.innerHTML = '<tr><td colspan="8" class="ce-empty">Failed to load. Retry.</td></tr>';
+    });
+  }
+
+  function sdCreate(){
+    var period = $('#ce-sd-period').value.trim();
+    var total  = parseInt($('#ce-sd-total').value, 10) || 0;
+    var notes  = $('#ce-sd-notes').value;
+    var statusEl = $('#ce-sd-status');
+    if (!period){ statusEl.textContent = 'Period label required.'; statusEl.style.color = '#b32424'; return; }
+    if (total <= 0){ statusEl.textContent = 'Total $RENO must be a positive integer.'; statusEl.style.color = '#b32424'; return; }
+    if (!confirm('Snapshot active stakers and allocate '+fmtN(total)+' $RENO pro-rata?\n\nPeriod label: '+period+'\n\nThis will create one payout row per eligible staker. They\'ll claim from the FAB Stake tab.')) return;
+    statusEl.textContent = 'Creating + enqueuing snapshot job...';
+    statusEl.style.color = '#5a6573';
+    var btn = $('#ce-sd-create'); btn.disabled = true;
+    post('/admin/coin-engine/stake_distributions.json', { period_label: period, total_amount: total, notes: notes })
+      .then(function(d){
+        var lab = (d && d.distribution && d.distribution.period_label) || period;
+        statusEl.textContent = '✓ Created "'+lab+'". Snapshot job enqueued.';
+        statusEl.style.color = '#1f6f3a';
+        $('#ce-sd-period').value = '';
+        $('#ce-sd-total').value = '';
+        $('#ce-sd-notes').value = '';
+        // Auto-refresh table after job typically settles
+        setTimeout(function(){ loadStakeDistributions(); }, 800);
+        setTimeout(function(){ loadStakeDistributions(); }, 3000);
+      })
+      .catch(function(e){
+        statusEl.textContent = '✗ ' + ((e && e.errors && e.errors[0]) || 'Create failed.');
+        statusEl.style.color = '#b32424';
+      })
+      .then(function(){ btn.disabled = false; });
+  }
+  $('#ce-sd-create').addEventListener('click', sdCreate);
+  $('#ce-sd-prev').addEventListener('click', function(){ if (sdState.page > 1){ sdState.page--; loadStakeDistributions(); }});
+  $('#ce-sd-next').addEventListener('click', function(){ sdState.page++; loadStakeDistributions(); });
 
 })();
 </script>

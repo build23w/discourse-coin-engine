@@ -166,5 +166,83 @@ module DiscourseCoinEngine
     rescue StandardError => e
       Rails.logger.error("[coin_engine.staking] DM admins failed: #{e.message}")
     end
+
+    # v0.21.0 — GET /coin-engine/staking/pending_payouts.json
+    # Returns the current user's unclaimed stake-yield payouts, newest first.
+    # Each row carries the period label, snapshot stake size, payout amount,
+    # and a claim_url the FAB POSTs to.
+    def pending_payouts
+      payouts = ::DiscourseCoinEngine::StakePayout
+                  .for_user(current_user.id)
+                  .pending
+                  .includes(:distribution)
+                  .order(created_at: :desc)
+                  .limit(100)
+                  .to_a
+      total_pending = payouts.sum { |p| p.payout_amount.to_i }
+      render json: {
+        payouts: payouts.map(&:serialize_for_user),
+        total_pending: total_pending,
+        count: payouts.size,
+      }
+    end
+
+    # v0.21.0 — POST /coin-engine/staking/claim_payout.json { payout_id }
+    # Atomically: lock the payout row, mark it claimed, credit $RENO via
+    # the canonical credit_score helper, and emit a MessageBus event so
+    # the FAB balance and toast update in real time.
+    def claim_payout
+      payout_id = params[:payout_id].to_i
+      return render json: { errors: ['payout_id required'] }, status: 400 if payout_id <= 0
+
+      payout = nil
+      amount = 0
+
+      ::ActiveRecord::Base.transaction do
+        # Row-level lock to defeat double-click claim races.
+        payout = ::DiscourseCoinEngine::StakePayout.lock.find_by(
+          id: payout_id, user_id: current_user.id
+        )
+        raise ActiveRecord::RecordNotFound unless payout
+        raise Discourse::InvalidParameters, "payout already #{payout.status}" unless payout.status == 'pending'
+
+        amount = payout.payout_amount.to_i
+        if amount > 0
+          ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, amount)
+        end
+        payout.update!(status: 'claimed', claimed_at: Time.zone.now)
+      end
+
+      # Bust caches + push MessageBus credit event for instant FAB update.
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
+      begin
+        if amount > 0
+          ::DiscourseCoinEngine::Notifier.credit!(
+            recipient: current_user,
+            amount:    amount,
+            reason:    'stake_unlock',
+            note:      "Stake-yield distribution #{payout.distribution&.period_label}",
+            ref:       { type: 'stake_payout', id: payout.id, distribution_id: payout.distribution_id },
+            send_pm:   false,
+          )
+        end
+      rescue StandardError => e
+        Rails.logger.warn "[coin-engine] stake payout notifier failed: #{e.class}: #{e.message}"
+      end
+
+      render json: {
+        ok: true,
+        payout: payout.serialize_for_user,
+        new_total: ::DiscourseCoinEngine.coin_user_total(current_user.id),
+      }
+    rescue ActiveRecord::RecordNotFound
+      render json: { errors: ['payout not found'] }, status: 404
+    rescue Discourse::InvalidParameters => e
+      render json: { errors: [e.message] }, status: 422
+    rescue StandardError => e
+      Rails.logger.warn "[coin-engine] stake claim failed user=#{current_user.id} payout=#{payout_id}: #{e.class}: #{e.message}"
+      render json: { errors: ["#{e.class}: #{e.message[0,200]}"] }, status: 500
+    end
+
   end
 end

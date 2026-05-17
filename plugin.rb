@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.20.0
+# version: 0.21.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -282,6 +282,9 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/quest_claim.rb', __FILE__)
   # v0.20.0 — Admin airdrop ledger row (one per /admin/airdrop.json POST)
   load File.expand_path('../app/models/discourse_coin_engine/admin_airdrop.rb', __FILE__)
+  # v0.21.0 — Stake-yield distribution: admin-funded staker payouts (whitepaper §5.2)
+  load File.expand_path('../app/models/discourse_coin_engine/stake_distribution.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/stake_payout.rb', __FILE__)
 
   # v0.4.0: registers the sidebar link AND the modern plugin-show route. We ship
   # a connector at admin/assets/javascripts/discourse/connectors/admin-plugin-config-page-coin-engine/
@@ -315,11 +318,16 @@ after_initialize do
   # v0.10.0: random_reach bounty dispatcher
   load File.expand_path('../lib/discourse_coin_engine/bounty_dispatcher.rb', __FILE__)
   load File.expand_path('../app/jobs/regular/expire_bounty_round.rb', __FILE__)
+  # v0.21.0 — Stake-yield distribution snapshot + payout job
+  load File.expand_path('../app/jobs/regular/coin_engine_disperse_stake_distribution.rb', __FILE__)
   # v0.10.1: Verified Pro admin queue + on-approval cascade
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_verified_pros_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminVerifiedProsController.layout false if defined?(DiscourseCoinEngine::AdminVerifiedProsController)
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_tournaments_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminTournamentsController.layout false if defined?(DiscourseCoinEngine::AdminTournamentsController)
+  # v0.21.0 — Admin stake-yield distribution surface
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_stake_distributions_controller.rb', __FILE__)
+  DiscourseCoinEngine::AdminStakeDistributionsController.layout false if defined?(DiscourseCoinEngine::AdminStakeDistributionsController)
 
   # v0.11.0: custodial wallets + withdraw requests
   load File.expand_path('../lib/discourse_coin_engine/wallet_encryption.rb', __FILE__)
@@ -386,6 +394,11 @@ after_initialize do
     get    '/admin/coin-engine/tournaments.json'                    => 'discourse_coin_engine/admin_tournaments#index'
     post   '/admin/coin-engine/tournaments.json'                    => 'discourse_coin_engine/admin_tournaments#create'
     delete '/admin/coin-engine/tournaments/:slug.json'              => 'discourse_coin_engine/admin_tournaments#destroy', constraints: { slug: %r{[a-zA-Z0-9_\-]+} }
+    # v0.21.0 — Stake-yield distribution admin surface
+    get    '/admin/coin-engine/stake_distributions.json'              => 'discourse_coin_engine/admin_stake_distributions#index'
+    get    '/admin/coin-engine/stake_distributions/:id.json'          => 'discourse_coin_engine/admin_stake_distributions#show',    constraints: { id: %r{\d+} }
+    post   '/admin/coin-engine/stake_distributions.json'              => 'discourse_coin_engine/admin_stake_distributions#create'
+    delete '/admin/coin-engine/stake_distributions/:id.json'          => 'discourse_coin_engine/admin_stake_distributions#destroy', constraints: { id: %r{\d+} }
     get  '/admin/coin-engine/payments.json'                          => 'discourse_coin_engine/admin_payments#list'
     get  '/admin/coin-engine/users/search.json'                      => 'discourse_coin_engine/admin_payments#search_users'
     get  '/admin/coin-engine/users/:id/payments.json'                => 'discourse_coin_engine/admin_payments#user_payments', constraints: { id: %r{\d+} }
@@ -418,6 +431,9 @@ after_initialize do
     post '/coin-engine/staking/initiate.json'         => 'discourse_coin_engine/staking#initiate'
     post '/coin-engine/staking/confirm.json'          => 'discourse_coin_engine/staking#confirm'
     post '/coin-engine/staking/unstake_request.json'  => 'discourse_coin_engine/staking#unstake_request'
+    # v0.21.0 — Stake-yield user-side: list pending payouts + claim
+    get  '/coin-engine/staking/pending_payouts.json'   => 'discourse_coin_engine/staking#pending_payouts'
+    post '/coin-engine/staking/claim_payout.json'      => 'discourse_coin_engine/staking#claim_payout'
 
     # v0.12.0: Storefront (user-facing)
     get  '/coin-engine/store/items.json'                             => 'discourse_coin_engine/store#items'
