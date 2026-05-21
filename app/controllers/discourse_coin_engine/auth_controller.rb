@@ -12,7 +12,7 @@ module DiscourseCoinEngine
     skip_before_action :redirect_to_login_if_required,   raise: false
     skip_before_action :check_xhr,                       raise: false
 
-    skip_before_action :verify_authenticity_token,       only: %i[signup_with_phantom phantom_taken signup_nonce], raise: false
+    skip_before_action :verify_authenticity_token,       only: %i[signup_with_phantom phantom_taken signup_nonce signin_with_phantom signin_nonce], raise: false
 
     SOLANA_PUBKEY_RE   = /\A[1-9A-HJ-NP-Za-km-z]{32,44}\z/.freeze
     NONCE_TTL_SECONDS  = 5 * 60     # 5 minutes from issue to consume
@@ -239,6 +239,121 @@ module DiscourseCoinEngine
     rescue StandardError => e
       Rails.logger.error("[coin_engine.auth] signup_with_phantom failed: #{e.class}: #{e.message[0,300]}\n#{e.backtrace[0,5].join("\n")}")
       render json: { errors: ['Could not create account. Try again in a moment.'] }, status: 500
+    end
+
+    # GET /coin-engine/auth/signin_nonce.json?public_key=<pk>
+    # v0.23.0 — Sign-in companion to signup_nonce. Same SIWS pattern, separate
+    # Redis namespace so a signup-flow nonce can't be reused to log in (and
+    # vice versa).
+    def signin_nonce
+      pubkey = params[:public_key].to_s.strip
+      unless pubkey.match?(SOLANA_PUBKEY_RE)
+        return render json: { errors: ['Invalid Solana wallet address.'] }, status: 422
+      end
+
+      RateLimiter.new(nil, "phantom_signin_nonce_#{request.remote_ip}", 30, 1.hour).performed!
+
+      nonce  = SecureRandom.hex(16)
+      domain = (SiteSetting.force_hostname.presence || ::Discourse.base_url.gsub(%r{^https?://}, '')).to_s
+      issued = Time.zone.now.iso8601
+
+      message = <<~MSG.strip
+        #{domain} wants you to sign in with your Solana account.
+
+        This signature only proves you control this wallet. It costs no SOL,
+        creates no on-chain transaction, and will not appear in your wallet history.
+
+        Action: sign-in
+        Nonce: #{nonce}
+        Issued: #{issued}
+      MSG
+
+      Discourse.redis.setex("coin_engine_signin_nonce:#{pubkey}", NONCE_TTL_SECONDS, message)
+
+      render json: {
+        ok:         true,
+        nonce:      nonce,
+        message:    message,
+        expires_in: NONCE_TTL_SECONDS,
+      }
+    rescue RateLimiter::LimitExceeded => e
+      render json: { errors: ["Slow down. Wait #{e.available_in}s."] }, status: 429
+    end
+
+    # POST /coin-engine/auth/signin_with_phantom.json
+    # Body: { public_key, signature, nonce }
+    # v0.23.0 — Verify ed25519 signature against the stored sign-in nonce, look
+    # up the user whose wallet UCF matches the pubkey, and log them on. No
+    # password required — the wallet signature IS the auth credential.
+    def signin_with_phantom
+      Rails.logger.info("[coin_engine.auth] signin_with_phantom ip=#{request.remote_ip} ua=#{request.user_agent.to_s[0,120]}")
+
+      if current_user
+        return render json: { ok: true, already_logged_in: true, user: { id: current_user.id, username: current_user.username }, redirect: '/' }
+      end
+
+      RateLimiter.new(nil, "phantom_signin_#{request.remote_ip}", 10, 1.hour).performed!
+
+      pubkey        = params[:public_key].to_s.strip
+      signature_b64 = params[:signature].to_s.strip
+      nonce         = params[:nonce].to_s.strip
+
+      unless pubkey.match?(SOLANA_PUBKEY_RE)
+        return render json: { errors: ['Invalid Solana wallet address.'] }, status: 422
+      end
+      if signature_b64.empty? || nonce.empty?
+        return render json: { errors: ['Wallet signature missing. Please retry the Phantom sign step.'] }, status: 422
+      end
+
+      stored_message = Discourse.redis.get("coin_engine_signin_nonce:#{pubkey}")
+      if stored_message.nil?
+        return render json: { errors: ['Sign-in challenge expired or never issued. Please retry.'] }, status: 422
+      end
+      unless stored_message.include?(nonce)
+        return render json: { errors: ['Nonce does not match the issued challenge. Please retry.'] }, status: 422
+      end
+      unless verify_solana_signature(pubkey, stored_message, signature_b64)
+        Rails.logger.warn("[coin_engine.auth] signin signature verify FAILED pubkey=#{pubkey} ip=#{request.remote_ip}")
+        return render json: { errors: ['Wallet signature did not verify. Please retry the Phantom sign step.'] }, status: 422
+      end
+
+      # Burn the nonce immediately so a leaked signature can't be replayed.
+      Discourse.redis.del("coin_engine_signin_nonce:#{pubkey}")
+
+      field_id = (SiteSetting.coin_engine_solana_wallet_user_field_id rescue 1).to_i
+      ucf = ::UserCustomField.find_by(name: "user_field_#{field_id}", value: pubkey)
+      unless ucf
+        return render json: { errors: ['No account is linked to that Phantom wallet. Sign up first.'] }, status: 404
+      end
+
+      user = ::User.find_by(id: ucf.user_id)
+      unless user
+        return render json: { errors: ['Linked account is missing. Contact a moderator.'] }, status: 404
+      end
+      if user.suspended?
+        return render json: { errors: ["This account is suspended until #{user.suspended_till&.strftime('%Y-%m-%d')}."] }, status: 403
+      end
+      unless user.active?
+        return render json: { errors: ['This account is inactive. Contact a moderator.'] }, status: 403
+      end
+      unless user.approved?
+        return render json: { errors: ['This account is awaiting admin approval.'] }, status: 403
+      end
+
+      log_on_user(user)
+      Rails.logger.info("[coin_engine.auth] phantom signin OK user=#{user.id} username=#{user.username} pubkey=#{pubkey} ip=#{request.remote_ip}")
+
+      render json: {
+        ok:       true,
+        user:     { id: user.id, username: user.username },
+        redirect: '/',
+        message:  "Welcome back, #{user.username}.",
+      }
+    rescue RateLimiter::LimitExceeded => e
+      render json: { errors: ["Too many sign-in attempts from this IP. Wait #{e.available_in}s."] }, status: 429
+    rescue StandardError => e
+      Rails.logger.error("[coin_engine.auth] signin_with_phantom failed: #{e.class}: #{e.message[0,300]}\n#{e.backtrace&.first(5)&.join("\n")}")
+      render json: { errors: ['Could not sign in. Try again in a moment.'] }, status: 500
     end
 
     # GET /coin-engine/auth/phantom_taken.json?public_key=<pk>

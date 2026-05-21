@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.22.0
+# version: 0.23.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -465,6 +465,9 @@ after_initialize do
     get  '/coin-engine/auth/signup_nonce.json'                       => 'discourse_coin_engine/auth#signup_nonce'
     post '/coin-engine/auth/signup_with_phantom.json'                => 'discourse_coin_engine/auth#signup_with_phantom'
     get  '/coin-engine/auth/phantom_taken.json'                      => 'discourse_coin_engine/auth#phantom_taken'
+    # v0.23.0 — sign-in (login) via Phantom signature
+    get  '/coin-engine/auth/signin_nonce.json'                       => 'discourse_coin_engine/auth#signin_nonce'
+    post '/coin-engine/auth/signin_with_phantom.json'                => 'discourse_coin_engine/auth#signin_with_phantom'
 
     # v0.12.0: Storefront (admin)
     get    '/admin/coin-engine/store/items.json'                     => 'discourse_coin_engine/admin_store#index'
