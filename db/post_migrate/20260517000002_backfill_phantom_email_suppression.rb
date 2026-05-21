@@ -10,12 +10,13 @@
 # with random fake addresses would have pushed SES bounce rate over the
 # suspension threshold within hours.
 #
-# Detection signature: email_tokens.confirmed = true AND
-# ABS(EXTRACT(EPOCH FROM (confirmed_at - users.created_at))) < 10
-# i.e. the token got marked confirmed within 10 seconds of the user being
-# created. Normal Discourse signup has a token sitting unconfirmed until
-# the user clicks the email link (which is always at least minutes later);
-# the only way to get within-10-seconds confirmation is the fake-confirm hack.
+# Detection signature (revised — modern Discourse email_tokens has no
+# confirmed_at column, so we use a different fingerprint): a user signed up
+# via Phantom iff their Solana-wallet UserCustomField (name = "user_field_<id>")
+# was inserted within ~30s of their users.created_at. signup_with_phantom
+# wraps user + wallet insertion in one transaction, so timing is tight (ms).
+# Users who connected a wallet AFTER normal signup (connect_phantom path) have
+# a wallet UCF created hours-to-years after their user row — they're excluded.
 #
 # Action taken per matched user:
 #   1) Stamp UserCustomField coin_engine_email_unverified=1 (EmailGate gate)
@@ -29,22 +30,29 @@
 
 class BackfillPhantomEmailSuppression < ActiveRecord::Migration[7.0]
   def up
-    return unless table_exists?(:user_custom_fields) && table_exists?(:email_tokens) && table_exists?(:user_options)
+    return unless table_exists?(:user_custom_fields) && table_exists?(:user_options)
 
-    # Find Phantom-signed-up users via the fake-confirm timing signature.
-    # NOTE: modern Discourse stores email on user_emails (not users), so we
-    # don't reference u.email here — we only need user_id to stamp the flag.
+    # Resolve the Solana-wallet user field id (defaults to 1 per the plugin).
+    field_id = begin
+      r = execute("SELECT value FROM site_settings WHERE name = 'coin_engine_solana_wallet_user_field_id'").to_a
+      (r[0] && r[0]['value'].to_i) > 0 ? r[0]['value'].to_i : 1
+    rescue StandardError
+      1
+    end
+    field_name = "user_field_#{field_id}"
+
     rows = execute(<<~SQL).to_a
       SELECT DISTINCT u.id AS user_id
       FROM users u
-      JOIN email_tokens et ON et.user_id = u.id
+      JOIN user_custom_fields ucf ON ucf.user_id = u.id
       WHERE u.active = true
-        AND et.confirmed = true
-        AND et.confirmed_at IS NOT NULL
-        AND ABS(EXTRACT(EPOCH FROM (et.confirmed_at - u.created_at))) < 10
+        AND ucf.name = #{quote(field_name)}
+        AND ucf.value IS NOT NULL
+        AND ucf.value <> ''
+        AND ABS(EXTRACT(EPOCH FROM (ucf.created_at - u.created_at))) < 30
     SQL
 
-    say "[v0.22.0 backfill] Found #{rows.size} Phantom-signed-up users to flag"
+    say "[v0.22.0 backfill] Found #{rows.size} Phantom-signed-up users (wallet UCF created within 30s of user record)"
 
     flagged = 0
     rows.each do |r|
