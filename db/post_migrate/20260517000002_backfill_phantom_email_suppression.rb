@@ -22,7 +22,6 @@
 #   2) Set user_options.email_digests=false, mailing_list_mode=false,
 #      email_level=never(3), email_messages_level=never(3) — suppresses
 #      Discourse-core engagement + transactional emails too
-#   3) Log a row to PluginStore for audit
 #
 # Recovery path: users can verify via /my/preferences/email at any time.
 # EmailGate.allowed? auto-clears the flag once a confirmed EmailToken with
@@ -33,8 +32,10 @@ class BackfillPhantomEmailSuppression < ActiveRecord::Migration[7.0]
     return unless table_exists?(:user_custom_fields) && table_exists?(:email_tokens) && table_exists?(:user_options)
 
     # Find Phantom-signed-up users via the fake-confirm timing signature.
+    # NOTE: modern Discourse stores email on user_emails (not users), so we
+    # don't reference u.email here — we only need user_id to stamp the flag.
     rows = execute(<<~SQL).to_a
-      SELECT DISTINCT u.id AS user_id, u.email
+      SELECT DISTINCT u.id AS user_id
       FROM users u
       JOIN email_tokens et ON et.user_id = u.id
       WHERE u.active = true
