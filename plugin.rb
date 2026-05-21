@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.21.0
+# version: 0.22.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -311,6 +311,8 @@ after_initialize do
   load File.expand_path('../lib/discourse_coin_engine/ledger_parser.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/tier_resolver.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/email_throttle.rb', __FILE__)
+  # v0.22.0: per-user email deliverability gate (Phantom signup bounce-rate fix)
+  load File.expand_path('../lib/discourse_coin_engine/email_gate.rb', __FILE__)
   # v0.8.4: cross-feature credit notifier (PM + MessageBus push)
   load File.expand_path('../lib/discourse_coin_engine/notifier.rb', __FILE__)
   # v0.9.0: server-side quest validator (mirrors client catalog, enforces threshold)

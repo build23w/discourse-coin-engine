@@ -27,6 +27,7 @@ module Jobs
           .where(staged: false, suspended_till: nil, silenced_till: nil)
           .where(id: digest_user_ids)
           .find_each(batch_size: 500) do |user|
+        next unless ::DiscourseCoinEngine::EmailGate.allowed?(user)
         next unless user.email.present?
         next unless ::DiscourseCoinEngine::EmailThrottle.may_send?(user.id)
 

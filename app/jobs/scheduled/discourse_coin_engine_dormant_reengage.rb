@@ -29,6 +29,8 @@ module Jobs
           .where('last_seen_at < ? AND last_seen_at > ?', cutoff_recent, cutoff_floor)
           .find_each(batch_size: 500) do |user|
         begin
+          # v0.22.0 — EmailGate kill-switch (Phantom signup bounce-rate fix)
+          next unless ::DiscourseCoinEngine::EmailGate.allowed?(user)
           next unless ::DiscourseCoinEngine::EmailThrottle.may_send?(user.id)
           DiscourseCoinEngineMailer.dormant_reengage(user: user, top_topics: top_topics).deliver_later
           ::DiscourseCoinEngine::EmailThrottle.mark_sent!(user.id)

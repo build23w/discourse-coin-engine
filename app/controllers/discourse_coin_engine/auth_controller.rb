@@ -1,39 +1,5 @@
 # frozen_string_literal: true
 
-# v0.16.0 - Phantom-based signup with sybil defenses.
-#
-# THE THREAT MODEL
-# ----------------
-#   1. Forged-pubkey spam: an attacker POSTs a random pubkey claiming
-#      ownership without controlling the keys.  -> Stopped by ed25519
-#      signature challenge (Layer 1).
-#   2. Sybil with real wallets: attacker generates N keypairs (free) and
-#      signs N nonces. They CAN pass Layer 1.  -> Filtered by activity
-#      check + optional balance check (Layer 2 / 3).
-#   3. Operational abuse from approved sybils: even after signup, a sybil
-#      account starts at trust_level 0 and (optionally) goes through admin
-#      approval first.  -> Layer 4.
-#   4. Volume from one box: per-IP rate limit on both nonce and signup
-#      endpoints (Layer 5).
-#
-# THE FLOW
-# --------
-#   1. Browser  -> GET  /coin-engine/auth/signup_nonce.json?public_key=PK
-#   2. Server   stores `coin_engine_signup_nonce:PK` in Redis (TTL 5 min)
-#               returns { nonce, message, expires_in }
-#   3. Browser  asks Phantom to signMessage(message)
-#   4. Browser  -> POST /coin-engine/auth/signup_with_phantom.json
-#               { public_key, signature_b64, nonce, username, email, password }
-#   5. Server   - verify nonce exists in Redis for PK
-#               - verify ed25519(message, signature, PK) via OpenSSL
-#                 (DER-wrap the 32-byte pubkey + OID 1.3.101.112, hand to
-#                 OpenSSL::PKey.read, then pkey.verify(nil, sig, msg))
-#               - verify wallet activity / balance (if SiteSetting on)
-#               - create user (active=true, email_tokens confirmed)
-#               - link wallet via UserCustomField (delete-then-insert)
-#               - log_on_user
-#               - DELETE the nonce so it can't be replayed
-
 require 'base64'
 require 'securerandom'
 require 'openssl'
@@ -46,18 +12,12 @@ module DiscourseCoinEngine
     skip_before_action :redirect_to_login_if_required,   raise: false
     skip_before_action :check_xhr,                       raise: false
 
-    # v0.15.2 - Skip CSRF on the public auth endpoints (anon CSRF tokens
-    # rotate, breaking long-lived signup forms). Sybil mitigations are
-    # cryptographic + rate limits + activity checks below; CSRF wasn't
-    # adding meaningful protection here.
     skip_before_action :verify_authenticity_token,       only: %i[signup_with_phantom phantom_taken signup_nonce], raise: false
 
     SOLANA_PUBKEY_RE   = /\A[1-9A-HJ-NP-Za-km-z]{32,44}\z/.freeze
     NONCE_TTL_SECONDS  = 5 * 60     # 5 minutes from issue to consume
     BASE58_ALPHABET    = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'.freeze
 
-    # Public RPCs we'll fall through if the override returns 403/429.
-    # Mirrors the SolanaController list.
     PUBLIC_RPC_FALLBACKS = [
       'https://solana-rpc.publicnode.com',
       'https://rpc.ankr.com/solana',
@@ -65,9 +25,6 @@ module DiscourseCoinEngine
     ].freeze
 
     # GET /coin-engine/auth/signup_nonce.json?public_key=<pk>
-    # Issues a one-time signing challenge. The browser asks Phantom to
-    # sign the returned `message` and posts the signature to
-    # signup_with_phantom along with the nonce.
     def signup_nonce
       pubkey = params[:public_key].to_s.strip
       unless pubkey.match?(SOLANA_PUBKEY_RE)
@@ -186,9 +143,8 @@ module DiscourseCoinEngine
         end
       end
 
-      # ---- Standard validation ----
-      if username.empty? || email.empty? || password.empty?
-        return render json: { errors: ['Username, email, and password are all required.'] }, status: 422
+      if username.empty? || password.empty?
+        return render json: { errors: ['Username and password are required.'] }, status: 422
       end
       min_pw = SiteSetting.min_password_length.to_i
       if password.length < min_pw
@@ -197,8 +153,17 @@ module DiscourseCoinEngine
       unless username =~ /\A[\w.\-]{2,20}\z/
         return render json: { errors: ['Username must be 2-20 characters: letters, numbers, dots, dashes, underscores.'] }, status: 422
       end
-      unless email.include?('@') && email.length >= 5
-        return render json: { errors: ['That email address looks invalid.'] }, status: 422
+
+      email_provided = !email.empty?
+      if email_provided
+        unless email.include?('@') && email.length >= 5
+          return render json: { errors: ['That email address looks invalid.'] }, status: 422
+        end
+        if email.downcase.end_with?("@#{::DiscourseCoinEngine::EmailGate::PLACEHOLDER_DOMAIN}")
+          return render json: { errors: ['That email domain is reserved. Leave the field blank to sign up without email.'] }, status: 422
+        end
+      else
+        email = ::DiscourseCoinEngine::EmailGate.placeholder_email_for(pubkey)
       end
 
       # ---- Already-linked check ----
@@ -210,6 +175,12 @@ module DiscourseCoinEngine
       end
 
       # ---- Create user + link wallet atomically (Layer 4 = trust_level 0 + optional approval) ----
+      # v0.22.0: account is active on-site (Phantom sig is our auth gate) but we
+      # NEVER fake-confirm email_tokens anymore. Email lifecycle goes through
+      # the standard Discourse prefs flow. EmailGate.suppress_user_emails! then
+      # clamps user_options.email_* to never and stamps the appropriate flag,
+      # so neither plugin email jobs nor Discourse core mailers will deliver
+      # until the user verifies via /my/preferences/email.
       force_approval = !!(SiteSetting.coin_engine_phantom_signup_force_approval rescue false)
       requires_approval = SiteSetting.must_approve_users || force_approval
       user = nil
@@ -219,7 +190,7 @@ module DiscourseCoinEngine
             username:                username,
             email:                   email,
             password:                password,
-            active:                  true,                   # skip email-verification gate
+            active:                  true,                   # Phantom sig is the auth — account active on-site
             approved:                !requires_approval,
             ip_address:              request.remote_ip,
             registration_ip_address: request.remote_ip,
@@ -228,10 +199,18 @@ module DiscourseCoinEngine
           user.password_required!
           user.save!
 
-          user.email_tokens.update_all(confirmed: true) if user.email_tokens.any?
+          # NOTE: deliberately NOT fake-confirming email_tokens. v0.15.2 used
+          # `user.email_tokens.update_all(confirmed: true)` here, which is the
+          # exact hole this version closes. EmailGate is the new source of
+          # truth for whether outbound mail can be sent to this user.
 
           ::UserCustomField.where(user_id: user.id, name: "user_field_#{field_id}").delete_all
           ::UserCustomField.create!(user_id: user.id, name: "user_field_#{field_id}", value: pubkey)
+
+          ::DiscourseCoinEngine::EmailGate.suppress_user_emails!(
+            user,
+            reason: email_provided ? :unverified : :no_email
+          )
         end
       rescue ::ActiveRecord::RecordInvalid => e
         return render json: { errors: e.record.errors.full_messages }, status: 422

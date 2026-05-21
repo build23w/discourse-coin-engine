@@ -27,6 +27,8 @@ module Jobs
           .where(id: digest_user_ids)
           .find_each(batch_size: 200) do |user|
         begin
+          # v0.22.0 — EmailGate kill-switch (Phantom signup bounce-rate fix)
+          next unless ::DiscourseCoinEngine::EmailGate.allowed?(user)
           calc = ::DiscourseCoinEngine::StreakCalculator.new(user_id: user.id)
           streak = calc.current
           next if streak < min_days
