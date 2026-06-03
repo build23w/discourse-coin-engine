@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.24.1
+# version: 0.25.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -257,6 +257,8 @@ after_initialize do
   # v0.6.0 phase controllers
   load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
+  # v0.25.0 — user-created squads + shareable squad page
+  load File.expand_path('../app/controllers/discourse_coin_engine/squad_controller.rb',       __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/identity_controller.rb',   __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/governance_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/surprise_controller.rb',   __FILE__)
@@ -559,13 +561,17 @@ after_initialize do
 
     # ===== v0.6.0 Phase 3: Social (Squads, Mentor, Spotlight) =====
     get  '/coin-engine/social/squads.json'                           => 'discourse_coin_engine/social#list_squads'
+    post '/coin-engine/social/squads.json'                           => 'discourse_coin_engine/social#create_squad'
     get  '/coin-engine/social/squads/:slug.json'                     => 'discourse_coin_engine/social#show_squad'
+    put  '/coin-engine/social/squads/:slug.json'                     => 'discourse_coin_engine/social#update_squad'
     post '/coin-engine/social/squads/:slug/join.json'                => 'discourse_coin_engine/social#join_squad'
     post '/coin-engine/social/squads/leave.json'                     => 'discourse_coin_engine/social#leave_squad'
     post '/coin-engine/social/mentorships.json'                      => 'discourse_coin_engine/social#create_mentorship'
     post '/coin-engine/social/mentorships/:id/accept.json'           => 'discourse_coin_engine/social#accept_mentorship', constraints: { id: %r{\d+} }
     get  '/coin-engine/social/spotlights.json'                       => 'discourse_coin_engine/social#list_spotlights'
     get  '/coin-engine/social/my_squad.json'                         => 'discourse_coin_engine/social#my_squad'
+    # v0.25.0 — public, shareable, SEO-able squad page
+    get  '/coin-engine/squad/:slug'                                  => 'discourse_coin_engine/squad#show', constraints: { slug: %r{[a-z0-9\-]+} }, defaults: { format: :html }
 
     # ===== v0.6.0 Phase 4: Identity (Achievements, Tournaments, AMA, Suggestions, Photo Bounties, Wrapped) =====
     get  '/coin-engine/identity/u/:username/achievements.json'       => 'discourse_coin_engine/identity#list_user_achievements', constraints: { username: username_re }
