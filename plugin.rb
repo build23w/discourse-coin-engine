@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.23.3
+# version: 0.23.4
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -826,16 +826,37 @@ after_initialize do
     DiscourseCoinEngine::AdminVerifiedProsController,
   ].each do |klass|
     klass.class_eval do
+      # v0.23.4 — Map Discourse's own well-typed exceptions to their correct
+      # HTTP status instead of masking everything as 500. Before this, a plain
+      # `requires_login` rejection (Discourse::NotLoggedIn < StandardError) was
+      # rendered as a 500 with a backtrace, which polluted error monitoring and
+      # made the client unable to tell "log in" from "server is broken". Same
+      # for rate-limits (429), bad params (400) and validation errors (422).
+      # Only genuinely-unexpected errors now become a JSON 500 (with backtrace).
       rescue_from StandardError do |e|
         action = (action_name rescue '?')
-        Rails.logger.error("[coin_engine] #{self.class.name}##{action} -> #{e.class}: #{e.message}")
-        (e.backtrace || []).first(10).each { |frame| Rails.logger.error("  #{frame}") }
-        render json: {
-          errors: ["#{e.class}: #{e.message}"],
+        status =
+          case e
+          when ::Discourse::NotLoggedIn        then 403
+          when ::Discourse::InvalidAccess      then 403
+          when ::Discourse::NotFound           then 404
+          when ::ActiveRecord::RecordNotFound  then 404
+          when ::Discourse::InvalidParameters  then 400
+          when ::RateLimiter::LimitExceeded    then 429
+          when ::ActiveRecord::RecordInvalid   then 422
+          else 500
+          end
+        if status == 500
+          Rails.logger.error("[coin_engine] #{self.class.name}##{action} -> #{e.class}: #{e.message}")
+          (e.backtrace || []).first(10).each { |frame| Rails.logger.error("  #{frame}") }
+        end
+        payload = {
+          errors: [status == 500 ? "#{e.class}: #{e.message}" : e.message],
           error_type: 'coin_engine_exception',
           action: action,
-          where: (e.backtrace || []).first(3),
-        }, status: 500
+        }
+        payload[:where] = (e.backtrace || []).first(3) if status == 500
+        render json: payload, status: status
       end
     end
   end
