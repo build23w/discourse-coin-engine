@@ -8,8 +8,25 @@ module DiscourseCoinEngine
 
     # GET /coin-engine/social/squads.json
     def list_squads
-      squads = Squad.enabled.order(total_score: :desc, member_count: :desc).limit(50)
-      render json: { squads: squads.map { |s| serialize_squad(s) } }
+      squads = Squad.enabled.order(total_score: :desc, member_count: :desc).limit(50).to_a
+      my_squad_id = current_user && SquadMembership.where(user_id: current_user.id).limit(1).pluck(:squad_id).first
+      render json: {
+        squads: squads.each_with_index.map { |s, i| serialize_squad(s).merge(rank: i + 1, joined: s.id == my_squad_id) },
+        my_squad_id: my_squad_id,
+      }
+    end
+
+    # GET /coin-engine/social/my_squad.json — current user's squad + standing
+    def my_squad
+      m = SquadMembership.find_by(user_id: current_user.id)
+      return render json: { squad: nil } unless m
+      squad = Squad.find_by(id: m.squad_id)
+      return render json: { squad: nil } unless squad
+      rank = Squad.enabled.where('total_score > ?', squad.total_score.to_i).count + 1
+      render json: {
+        squad: serialize_squad(squad).merge(rank: rank),
+        membership: { role: m.role, joined_at: m.joined_at },
+      }
     end
 
     # GET /coin-engine/social/squads/:slug.json

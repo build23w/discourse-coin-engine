@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.23.5
+# version: 0.24.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -303,6 +303,8 @@ after_initialize do
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_daily_top_picks.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_random_airdrop.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_spotlight_rotation.rb', __FILE__)
+  # v0.24.0 — squad leaderboard score aggregation
+  load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_refresh_squad_scores.rb', __FILE__)
 
   load File.expand_path('../app/mailers/discourse_coin_engine_mailer.rb', __FILE__)
 
@@ -327,6 +329,9 @@ after_initialize do
   DiscourseCoinEngine::AdminVerifiedProsController.layout false if defined?(DiscourseCoinEngine::AdminVerifiedProsController)
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_tournaments_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminTournamentsController.layout false if defined?(DiscourseCoinEngine::AdminTournamentsController)
+  # v0.24.0 — admin CRUD for regional squads
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_social_controller.rb', __FILE__)
+  DiscourseCoinEngine::AdminSocialController.layout false if defined?(DiscourseCoinEngine::AdminSocialController)
   # v0.21.0 — Admin stake-yield distribution surface
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_stake_distributions_controller.rb', __FILE__)
   DiscourseCoinEngine::AdminStakeDistributionsController.layout false if defined?(DiscourseCoinEngine::AdminStakeDistributionsController)
@@ -490,6 +495,12 @@ after_initialize do
     post '/admin/coin-engine/wallets/backfill.json'                        => 'discourse_coin_engine/admin_wallets#backfill'
     post '/admin/coin-engine/wallets/regenerate.json'                      => 'discourse_coin_engine/admin_wallets#regenerate'
 
+    # v0.24.0 — admin squad management
+    get    '/admin/coin-engine/social/squads.json'                         => 'discourse_coin_engine/admin_social#squads_index'
+    post   '/admin/coin-engine/social/squads.json'                         => 'discourse_coin_engine/admin_social#squads_create'
+    put    '/admin/coin-engine/social/squads/:id.json'                     => 'discourse_coin_engine/admin_social#squads_update',  constraints: { id: %r{\d+} }
+    delete '/admin/coin-engine/social/squads/:id.json'                     => 'discourse_coin_engine/admin_social#squads_destroy', constraints: { id: %r{\d+} }
+
     # Pre-v0.4.5 alias kept alive for any in-flight bookmarks
     get  '/coin-engine/admin'                                        => 'discourse_coin_engine/admin_payments#index'
     get  '/coin-engine/admin/embed'                                  => 'discourse_coin_engine/admin_payments#embed'
@@ -547,6 +558,7 @@ after_initialize do
     post '/coin-engine/social/mentorships.json'                      => 'discourse_coin_engine/social#create_mentorship'
     post '/coin-engine/social/mentorships/:id/accept.json'           => 'discourse_coin_engine/social#accept_mentorship', constraints: { id: %r{\d+} }
     get  '/coin-engine/social/spotlights.json'                       => 'discourse_coin_engine/social#list_spotlights'
+    get  '/coin-engine/social/my_squad.json'                         => 'discourse_coin_engine/social#my_squad'
 
     # ===== v0.6.0 Phase 4: Identity (Achievements, Tournaments, AMA, Suggestions, Photo Bounties, Wrapped) =====
     get  '/coin-engine/identity/u/:username/achievements.json'       => 'discourse_coin_engine/identity#list_user_achievements', constraints: { username: username_re }
