@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.23.4
+# version: 0.23.5
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -824,6 +824,12 @@ after_initialize do
     DiscourseCoinEngine::QuestsController,
     DiscourseCoinEngine::MeController,
     DiscourseCoinEngine::AdminVerifiedProsController,
+    # v0.23.5 — staking + solana proxy: surface their unexpected errors as
+    # diagnosable JSON (with correct status mapping) instead of an opaque raw
+    # 500. Their inline method-level rescues (RateLimiter, RecordNotUnique,
+    # NotFound) still run first; only truly-unexpected errors reach this.
+    DiscourseCoinEngine::StakingController,
+    DiscourseCoinEngine::SolanaController,
   ].each do |klass|
     klass.class_eval do
       # v0.23.4 — Map Discourse's own well-typed exceptions to their correct

@@ -72,23 +72,33 @@ module DiscourseCoinEngine
       list
     end
 
+    # v0.23.5 — Each RPC is retried twice before moving on, with a slightly
+    # longer timeout. A single transient timeout/5xx from one node used to
+    # bubble all the way up to a 503 and break the browser's tx build (no
+    # blockhash = no stake / buy / store purchase). With 3 candidates x 2
+    # attempts the proxy now rides through the common one-off RPC blips.
+    RPC_RETRIES = 2
+
     def call_rpc(method:, params:)
       body = { jsonrpc: '2.0', id: 1, method: method, params: params }.to_json
       rpc_candidates.each do |url|
-        begin
-          uri = URI(url)
-          req = Net::HTTP::Post.new(uri.request_uri, 'Content-Type' => 'application/json', 'Accept' => 'application/json')
-          req.body = body
-          res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', read_timeout: 8, open_timeout: 5) { |h| h.request(req) }
-          parsed = JSON.parse(res.body) rescue nil
-          if parsed && parsed['result']
-            @rpc_used = url
-            return parsed['result']
-          else
-            Rails.logger.debug("[coin_engine.solana] #{method} via #{url} returned no result: code=#{res.code} body=#{res.body.to_s[0,200]}")
+        RPC_RETRIES.times do |attempt|
+          begin
+            uri = URI(url)
+            req = Net::HTTP::Post.new(uri.request_uri, 'Content-Type' => 'application/json', 'Accept' => 'application/json')
+            req.body = body
+            res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', read_timeout: 10, open_timeout: 6) { |h| h.request(req) }
+            parsed = JSON.parse(res.body) rescue nil
+            if parsed && parsed['result']
+              @rpc_used = url
+              return parsed['result']
+            else
+              Rails.logger.debug("[coin_engine.solana] #{method} via #{url} (try #{attempt + 1}) no result: code=#{res.code} body=#{res.body.to_s[0,160]}")
+            end
+          rescue StandardError => e
+            Rails.logger.debug("[coin_engine.solana] #{method} via #{url} (try #{attempt + 1}) failed: #{e.class}: #{e.message[0,160]}")
           end
-        rescue StandardError => e
-          Rails.logger.debug("[coin_engine.solana] #{method} via #{url} failed: #{e.class}: #{e.message[0,160]}")
+          sleep 0.4 if attempt < RPC_RETRIES - 1
         end
       end
       nil
