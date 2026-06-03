@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.24.0
+# version: 0.24.1
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -355,6 +355,13 @@ after_initialize do
   load File.expand_path('../app/jobs/regular/coin_engine_fulfill_store_purchase.rb', __FILE__)
   # v0.12.2 - staking
   load File.expand_path('../app/models/discourse_coin_engine/stake.rb', __FILE__)
+  # v0.24.1 — CRITICAL: load the SOL staking model. stake.rb is an empty stub;
+  # the real ::DiscourseCoinEngine::SolStake lives in sol_stake.rb and is
+  # referenced by staking_controller (index/initiate/confirm/unstake) and the
+  # confirm_stake job. Without this load every staking endpoint threw
+  # `NameError: uninitialized constant DiscourseCoinEngine::...::SolStake` and
+  # 500'd — the actual reason staking "did not work".
+  load File.expand_path('../app/models/discourse_coin_engine/sol_stake.rb', __FILE__)
   load File.expand_path('../app/jobs/regular/coin_engine_confirm_stake.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/staking_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/store_controller.rb', __FILE__)
