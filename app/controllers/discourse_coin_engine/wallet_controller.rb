@@ -51,11 +51,13 @@ module DiscourseCoinEngine
         source:           'signup_browser',
       )
 
-      ::UserCustomField.upsert(
-        { user_id: current_user.id, name: "user_field_#{field_id}", value: pubkey,
-          created_at: Time.zone.now, updated_at: Time.zone.now },
-        unique_by: [:user_id, :name],
-      )
+      # v0.23.3: delete-then-insert, NOT upsert(unique_by:). user_custom_fields
+      # has no unique index so the upsert stacks dupe rows that comma-concat in
+      # User#user_fields and break Base58 validation. Matches connect_phantom.
+      ::ActiveRecord::Base.transaction do
+        ::UserCustomField.where(user_id: current_user.id, name: "user_field_#{field_id}").delete_all
+        ::UserCustomField.create!(user_id: current_user.id, name: "user_field_#{field_id}", value: pubkey)
+      end
 
       render json: { ok: true, public_key: pubkey }
     rescue ActiveRecord::RecordNotUnique

@@ -72,10 +72,16 @@ module Jobs
     private
 
     def write_wallet_to_user_field(user, field_id, pubkey)
-      ::UserCustomField.upsert(
-        { user_id: user.id, name: "user_field_#{field_id}", value: pubkey, created_at: Time.zone.now, updated_at: Time.zone.now },
-        unique_by: [:user_id, :name]
-      )
+      # v0.23.3: user_custom_fields has NO unique index on (user_id, name), so
+      # UserCustomField.upsert(unique_by: [:user_id, :name]) silently degrades to
+      # a plain INSERT and stacks duplicate rows. User#user_fields[fid] then
+      # comma-concats every matching row, so the wallet comes back as
+      # "<pk>,<pk>,..." and trips the 32-44 Base58 check. Delete-then-insert in a
+      # transaction (matches connect_phantom + auth; self-heals prior dupes).
+      ::ActiveRecord::Base.transaction do
+        ::UserCustomField.where(user_id: user.id, name: "user_field_#{field_id}").delete_all
+        ::UserCustomField.create!(user_id: user.id, name: "user_field_#{field_id}", value: pubkey)
+      end
     rescue StandardError => e
       Rails.logger.error("[coin_engine] failed to write wallet to user_field for #{user.id}: #{e.message}")
     end

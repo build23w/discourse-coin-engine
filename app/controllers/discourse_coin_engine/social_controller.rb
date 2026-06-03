@@ -3,7 +3,7 @@
 # Phase 3 — Social: Squads, Mentorships, Spotlight.
 module DiscourseCoinEngine
   class SocialController < ::ApplicationController
-    requires_login except: [:list_squads, :show_squad]
+    requires_login except: [:list_squads, :show_squad, :list_spotlights]
 
 
     # GET /coin-engine/social/squads.json
