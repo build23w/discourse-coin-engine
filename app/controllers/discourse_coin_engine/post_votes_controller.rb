@@ -50,7 +50,7 @@ module DiscourseCoinEngine
         else
           pv = PostVote.create!(
             user_id: current_user.id, topic_id: topic.id,
-            post_id: topic.first_post_id, author_user_id: author_id, direction: dir, rewarded: false
+            post_id: ::Post.where(topic_id: topic.id, post_number: 1).limit(1).pluck(:id).first, author_user_id: author_id, direction: dir, rewarded: false
           )
           final_dir = dir
           if dir == 1 && author_id.positive? && reward_eligible?(author_id) && under_caps?(topic.id, author_id)
