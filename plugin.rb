@@ -2,9 +2,8 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.30.0
+# version: 0.31.0
 # authors: LF Builders
-# url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
 
 enabled_site_setting :coin_engine_enabled
@@ -36,7 +35,6 @@ module ::DiscourseCoinEngine
     # Our own caches (5-15min TTL on serializer attrs)
     begin
       Rails.cache.delete("coin_engine_score_user_#{uid}")
-      Rails.cache.delete("coin_engine_rank_user_#{uid}")
       Rails.cache.delete("coin_engine_streak_user_#{uid}")
     rescue StandardError
       nil
@@ -129,7 +127,11 @@ module ::DiscourseCoinEngine
 
     refreshed = false
     begin
-      if defined?(::DiscourseGamification::LeaderboardCachedView)
+      # NOTE: discourse-gamification dropped the `.refresh` class method in newer
+      # versions (Discourse 2026.6+). Guard with respond_to? so we don't spam
+      # NoMethodError; the raw-SQL materialized-view refresh below covers it.
+      if defined?(::DiscourseGamification::LeaderboardCachedView) &&
+         ::DiscourseGamification::LeaderboardCachedView.respond_to?(:refresh)
         ::DiscourseGamification::LeaderboardCachedView.refresh
         refreshed = true
       end
@@ -176,6 +178,21 @@ module ::DiscourseCoinEngine
     ActiveRecord::Base.connection.exec_query(sql, 'coin_user_total_bulk').rows.to_h
   rescue StandardError
     {}
+  end
+
+  # All-user ranks computed in ONE pass and shared across every serializer for
+  # 10 minutes. Previously each user's coin_engine_rank ran its own full-table
+  # window scan on cache miss; this collapses that to a single scan + hash lookup.
+  def self.rank_for(user_id)
+    uid = user_id.to_i
+    return nil if uid <= 0
+    ranks = Rails.cache.fetch('coin_engine_all_ranks', expires_in: 10.minutes) do
+      sql = "SELECT user_id, RANK() OVER (ORDER BY SUM(score) DESC)::int AS rank FROM gamification_scores WHERE user_id > 0 GROUP BY user_id"
+      ActiveRecord::Base.connection.exec_query(sql, 'coin_engine_all_ranks').rows.each_with_object({}) { |(u, r), h| h[u.to_i] = r.to_i }
+    end
+    ranks[uid]
+  rescue StandardError
+    nil
   end
 
   # v0.8.2: Solana address validation. Solana addresses are base58-encoded
@@ -659,26 +676,7 @@ after_initialize do
   end
 
   add_to_serializer(:current_user, :coin_engine_rank, include_condition: -> { SiteSetting.coin_engine_enabled }) do
-    next nil unless object && object.id && object.id > 0
-    Rails.cache.fetch("coin_engine_rank_user_#{object.id}", expires_in: 10.minutes) do
-      sql = <<~SQL
-        WITH totals AS (
-          SELECT user_id, SUM(score) AS total
-          FROM gamification_scores
-          WHERE user_id > 0
-          GROUP BY user_id
-        )
-        SELECT rank
-        FROM (
-          SELECT user_id, RANK() OVER (ORDER BY total DESC) AS rank
-          FROM totals
-        ) ranked
-        WHERE user_id = $1
-      SQL
-      ActiveRecord::Base.connection.exec_query(sql, 'coin_engine_rank', [object.id]).rows.first&.first
-    rescue StandardError
-      nil
-    end
+    object && object.id && object.id > 0 ? ::DiscourseCoinEngine.rank_for(object.id) : nil
   end
 
   add_to_serializer(:current_user, :coin_engine_streak, include_condition: -> { SiteSetting.coin_engine_enabled }) do

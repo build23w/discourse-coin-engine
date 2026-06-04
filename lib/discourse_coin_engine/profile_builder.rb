@@ -118,21 +118,7 @@ module DiscourseCoinEngine
     end
 
     def coin_rank(user)
-      # If the leaderboard cache has the user's rank, use it. Otherwise compute
-      # cheaply via the gamification_scores table.
-      sql = <<~SQL
-        SELECT 1 + COUNT(*) FROM (
-          SELECT user_id, SUM(score) AS s
-          FROM gamification_scores
-          GROUP BY user_id
-          HAVING SUM(score) > (
-            SELECT COALESCE(SUM(score), 0)
-            FROM gamification_scores
-            WHERE user_id = #{user.id.to_i}
-          )
-        ) ranked
-      SQL
-      ::ActiveRecord::Base.connection.select_value(sql).to_i
+      ::DiscourseCoinEngine.rank_for(user.id) || 0
     rescue StandardError
       0
     end
