@@ -318,6 +318,59 @@ module DiscourseCoinEngine
       }
     end
 
+    # ===== On-chain SOL tips (v0.27.0) =====
+    # POST /coin-engine/economy/sol_tip/initiate.json { recipient_username, amount_lamports, post_id? }
+    # Records a pending P2P SOL tip and returns the recipient wallet + memo for
+    # the sender's Phantom to sign a direct transfer.
+    def sol_tip_initiate
+      RateLimiter.new(current_user, 'coin_engine_sol_tip', 20, 1.hour).performed!
+      recipient = ::User.find_by(username_lower: params[:recipient_username].to_s.downcase)
+      return render_json_error('recipient not found', status: 404) unless recipient
+      return render_json_error('cannot tip yourself', status: 422) if recipient.id == current_user.id
+      rwallet, st = ::DiscourseCoinEngine.user_solana_wallet(recipient)
+      return render_json_error("@#{recipient.username} hasn't linked a Solana wallet yet.", status: 422) unless st == :ok
+
+      amount = params[:amount_lamports].to_i
+      raise ::Discourse::InvalidParameters, 'amount_lamports must be 0.001-100 SOL' if amount < 1_000_000 || amount > 100 * 1_000_000_000
+
+      tip = SolTip.create!(
+        sender_user_id: current_user.id, recipient_user_id: recipient.id,
+        amount_lamports: amount, recipient_wallet: rwallet, status: 'pending',
+        post_id: params[:post_id].presence
+      )
+      memo = "lf-coin-engine:tip:#{tip.id}:to:#{recipient.id}"
+      tip.update_column(:memo, memo)
+      render json: { ok: true, tip: tip.serialize_for_user, recipient_username: recipient.username, recipient_wallet: rwallet, amount_lamports: amount, memo: memo }
+    rescue RateLimiter::LimitExceeded => e
+      render_json_error("Slow down. Try again in #{e.available_in}s.", status: 429)
+    rescue ActiveRecord::RecordInvalid => e
+      render_json_error(e.record.errors.full_messages.join(', '), status: 422)
+    end
+
+    # POST /coin-engine/economy/sol_tip/confirm.json { tip_id, tx_signature }
+    def sol_tip_confirm
+      tip = SolTip.find_by(id: params[:tip_id].to_i, sender_user_id: current_user.id)
+      return render_json_error('tip not found', status: 404) unless tip
+      sig = params[:tx_signature].to_s.strip
+      raise ::Discourse::InvalidParameters, 'tx_signature' if sig.length < 60 || sig.length > 100
+      return render json: { ok: true, tip: tip.serialize_for_user, already: true } unless tip.status == 'pending'
+      tip.update!(tx_signature: sig)
+      ::Jobs.enqueue_in(2.seconds, :coin_engine_confirm_sol_tip, tip_id: tip.id) if defined?(::Jobs::CoinEngineConfirmSolTip)
+      render json: { ok: true, tip: tip.serialize_for_user, queued: true }
+    rescue ActiveRecord::RecordNotUnique
+      render_json_error('That tx signature is already recorded.', status: 422)
+    end
+
+    # GET /coin-engine/economy/sol_tips.json — confirmed SOL tips the user received
+    def list_sol_tips
+      tips = SolTip.confirmed.for_recipient(current_user.id).recent.limit(50)
+      total = SolTip.confirmed.for_recipient(current_user.id).sum(:amount_lamports).to_i
+      render json: {
+        tips: tips.map { |t| t.serialize_for_user.merge(from: ::User.where(id: t.sender_user_id).pluck(:username).first) },
+        total_lamports: total, total_sol: total.to_f / 1_000_000_000
+      }
+    end
+
     def serialize_stake(s)
       {
         id: s.id, amount: s.amount, duration_days: s.duration_days,

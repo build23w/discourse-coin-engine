@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.26.0
+# version: 0.27.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -271,6 +271,8 @@ after_initialize do
   # v0.6.0 models
   load File.expand_path('../app/models/discourse_coin_engine/payment.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/tip.rb', __FILE__)
+  # v0.27.0 — on-chain peer-to-peer SOL tip
+  load File.expand_path('../app/models/discourse_coin_engine/sol_tip.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/shop_item.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/bounty.rb', __FILE__)
   # v0.10.0 — random_reach bounty support
@@ -365,6 +367,7 @@ after_initialize do
   # 500'd — the actual reason staking "did not work".
   load File.expand_path('../app/models/discourse_coin_engine/sol_stake.rb', __FILE__)
   load File.expand_path('../app/jobs/regular/coin_engine_confirm_stake.rb', __FILE__)
+  load File.expand_path('../app/jobs/regular/coin_engine_confirm_sol_tip.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/staking_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/store_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/admin_store_controller.rb', __FILE__)
@@ -549,6 +552,10 @@ after_initialize do
 
     # ===== v0.6.0 Phase 2: Economy (Tips, Shop, Bounties, Stakes) =====
     post '/coin-engine/economy/tips.json'                            => 'discourse_coin_engine/economy#create_tip'
+    # v0.27.0 — on-chain peer-to-peer SOL tips
+    post '/coin-engine/economy/sol_tip/initiate.json'                => 'discourse_coin_engine/economy#sol_tip_initiate'
+    post '/coin-engine/economy/sol_tip/confirm.json'                 => 'discourse_coin_engine/economy#sol_tip_confirm'
+    get  '/coin-engine/economy/sol_tips.json'                        => 'discourse_coin_engine/economy#list_sol_tips'
     get  '/coin-engine/economy/tips/sent.json'                       => 'discourse_coin_engine/economy#list_sent_tips'
     get  '/coin-engine/economy/tips/received.json'                   => 'discourse_coin_engine/economy#list_received_tips'
     get  '/coin-engine/economy/shop.json'                            => 'discourse_coin_engine/economy#shop_index'
