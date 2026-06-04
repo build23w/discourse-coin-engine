@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.25.0
+# version: 0.26.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -468,6 +468,9 @@ after_initialize do
 
     # v0.12.7: Solana RPC proxy (browser hits this instead of mainnet-beta)
     get  '/coin-engine/solana/recent_blockhash.json'                 => 'discourse_coin_engine/solana#recent_blockhash'
+    # v0.26.0 — live on-chain $RENO token data via the RPC proxy
+    get  '/coin-engine/solana/token_supply.json'                     => 'discourse_coin_engine/solana#token_supply'
+    get  '/coin-engine/solana/token_balance.json'                    => 'discourse_coin_engine/solana#token_balance'
 
     # v0.14.0: Notifier interest registration (FAB hub Notifier tab)
     post '/coin-engine/notifier/subscribe.json'                      => 'discourse_coin_engine/notifier#subscribe'

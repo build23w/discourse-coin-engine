@@ -23,8 +23,8 @@ require 'json'
 
 module DiscourseCoinEngine
   class SolanaController < ::ApplicationController
-    requires_login
-    before_action :ensure_logged_in
+    requires_login except: [:token_supply]
+    before_action :ensure_logged_in, except: [:token_supply]
     skip_before_action :check_xhr, raise: false
 
     # CORS-friendly public RPCs we'll try in order. Mirrors the list in the
@@ -60,6 +60,51 @@ module DiscourseCoinEngine
       }
     rescue RateLimiter::LimitExceeded => e
       render json: { errors: ["Slow down. Try again in #{e.available_in}s."] }, status: 429
+    end
+
+    # v0.26.0 — GET /coin-engine/solana/token_supply.json (PUBLIC)
+    # Live on-chain circulating supply of the community token. Cached 5 min.
+    def token_supply
+      mint = (SiteSetting.coin_engine_solana_mint_address rescue '').to_s.strip
+      return render json: { ok: false, reason: 'no_mint' } if mint.empty?
+      data = Rails.cache.fetch("coin_engine_token_supply_#{mint}", expires_in: 5.minutes) do
+        res = call_rpc(method: 'getTokenSupply', params: [mint])
+        v = res && res['value']
+        v ? { ui: v['uiAmountString'].to_f, decimals: v['decimals'].to_i, raw: v['amount'].to_s } : nil
+      end
+      return render json: { ok: false, reason: 'rpc_unavailable' } unless data
+      render json: { ok: true, mint: mint, circulating: data[:ui], decimals: data[:decimals], raw_amount: data[:raw], rpc_used: @rpc_used }
+    end
+
+    # v0.26.0 — GET /coin-engine/solana/token_balance.json[?owner=<pubkey>]
+    # Live on-chain $RENO balance for a wallet (defaults to the caller's linked
+    # wallet). Sums all token accounts for the mint (handles multiple ATAs).
+    def token_balance
+      RateLimiter.new(current_user, 'coin_engine_token_balance', 60, 1.hour).performed!
+      owner = params[:owner].to_s.strip
+      if owner.empty?
+        w, stt = ::DiscourseCoinEngine.user_solana_wallet(current_user)
+        owner = w.to_s if stt == :ok
+      end
+      return render json: { ok: false, balance: 0, reason: 'no_wallet' } if owner.empty?
+      return render json: { ok: false, balance: 0, reason: 'bad_owner' } unless ::DiscourseCoinEngine.valid_solana_address?(owner)
+      mint = (SiteSetting.coin_engine_solana_mint_address rescue '').to_s.strip
+      return render json: { ok: false, balance: 0, reason: 'no_mint' } if mint.empty?
+
+      res = call_rpc(method: 'getTokenAccountsByOwner', params: [owner, { mint: mint }, { encoding: 'jsonParsed' }])
+      ui = 0.0
+      raw = 0
+      if res && res['value']
+        res['value'].each do |acc|
+          ta = (acc.dig('account', 'data', 'parsed', 'info', 'tokenAmount') rescue nil)
+          next unless ta
+          ui  += ta['uiAmount'].to_f
+          raw += ta['amount'].to_i
+        end
+      end
+      render json: { ok: true, owner: owner, mint: mint, balance: ui, raw_amount: raw, rpc_used: @rpc_used }
+    rescue RateLimiter::LimitExceeded => e
+      render json: { ok: false, balance: 0, errors: ["Slow down. Try again in #{e.available_in}s."] }, status: 429
     end
 
     private
