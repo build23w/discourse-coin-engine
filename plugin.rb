@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.27.0
+# version: 0.28.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -257,6 +257,7 @@ after_initialize do
   # v0.6.0 phase controllers
   load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/post_votes_controller.rb',  __FILE__)
   # v0.25.0 — user-created squads + shareable squad page
   load File.expand_path('../app/controllers/discourse_coin_engine/squad_controller.rb',       __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/identity_controller.rb',   __FILE__)
@@ -273,6 +274,8 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/tip.rb', __FILE__)
   # v0.27.0 — on-chain peer-to-peer SOL tip
   load File.expand_path('../app/models/discourse_coin_engine/sol_tip.rb', __FILE__)
+  # v0.28.0 — Reddit-style feed votes
+  load File.expand_path('../app/models/discourse_coin_engine/post_vote.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/shop_item.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/bounty.rb', __FILE__)
   # v0.10.0 — random_reach bounty support
@@ -556,6 +559,10 @@ after_initialize do
     post '/coin-engine/economy/sol_tip/initiate.json'                => 'discourse_coin_engine/economy#sol_tip_initiate'
     post '/coin-engine/economy/sol_tip/confirm.json'                 => 'discourse_coin_engine/economy#sol_tip_confirm'
     get  '/coin-engine/economy/sol_tips.json'                        => 'discourse_coin_engine/economy#list_sol_tips'
+    # v0.28.0 — Reddit-style feed voting
+    post '/coin-engine/votes/cast.json'                              => 'discourse_coin_engine/post_votes#cast'
+    get  '/coin-engine/votes/batch.json'                             => 'discourse_coin_engine/post_votes#batch'
+    get  '/coin-engine/votes/top.json'                               => 'discourse_coin_engine/post_votes#top'
     get  '/coin-engine/economy/tips/sent.json'                       => 'discourse_coin_engine/economy#list_sent_tips'
     get  '/coin-engine/economy/tips/received.json'                   => 'discourse_coin_engine/economy#list_received_tips'
     get  '/coin-engine/economy/shop.json'                            => 'discourse_coin_engine/economy#shop_index'
@@ -865,6 +872,7 @@ after_initialize do
     # NotFound) still run first; only truly-unexpected errors reach this.
     DiscourseCoinEngine::StakingController,
     DiscourseCoinEngine::SolanaController,
+    DiscourseCoinEngine::PostVotesController,
   ].each do |klass|
     klass.class_eval do
       # v0.23.4 — Map Discourse's own well-typed exceptions to their correct

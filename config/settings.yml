@@ -435,3 +435,24 @@ plugins:
   # want most signups instant but Phantom signups reviewed.
   coin_engine_phantom_signup_force_approval:
     default: false
+
+  # ===== Feed voting (Reddit-style up/down votes -> $RENO) =====
+  coin_engine_feed_voting_enabled:
+    default: true
+    client: true
+  coin_engine_vote_reward_amount:
+    default: 2
+    min: 0
+  coin_engine_vote_reward_daily_cap_per_topic:
+    default: 50
+    min: 0
+  coin_engine_vote_reward_daily_cap_per_author:
+    default: 200
+    min: 0
+  coin_engine_vote_reward_min_trust_level:
+    default: 1
+    min: 0
+    max: 4
+  coin_engine_vote_reward_min_account_age_days:
+    default: 3
+    min: 0
