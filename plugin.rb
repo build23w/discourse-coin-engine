@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.29.0
+# version: 0.30.0
 # authors: LF Builders
 # url: https://github.com/build23w/discourse-coin-engine
 # required_version: 3.2.0
@@ -563,6 +563,7 @@ after_initialize do
     post '/coin-engine/votes/cast.json'                              => 'discourse_coin_engine/post_votes#cast'
     get  '/coin-engine/votes/batch.json'                             => 'discourse_coin_engine/post_votes#batch'
     get  '/coin-engine/votes/top.json'                               => 'discourse_coin_engine/post_votes#top'
+    get  '/coin-engine/votes/top_replies.json'                       => 'discourse_coin_engine/post_votes#top_replies'
     get  '/coin-engine/economy/tips/sent.json'                       => 'discourse_coin_engine/economy#list_sent_tips'
     get  '/coin-engine/economy/tips/received.json'                   => 'discourse_coin_engine/economy#list_received_tips'
     get  '/coin-engine/economy/shop.json'                            => 'discourse_coin_engine/economy#shop_index'

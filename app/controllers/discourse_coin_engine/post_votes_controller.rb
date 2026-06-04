@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# v0.29.0 — Reddit-style voting wired to $RENO, POST-centric.
+# v0.30.0 — Reddit-style voting wired to $RENO, POST-centric.
 # Votes target a POST: the OP (feed) or any reply (topic page). One vote per
 # (user, post). Anti-abuse: TL>=N to vote, rolling rate limits (30/hr, 200/day),
 # can't self-vote. Author earns $RENO only on eligible upvotes (voter TL>=1,
@@ -8,7 +8,7 @@
 # Downvotes never pay; un-voting never claws back.
 module DiscourseCoinEngine
   class PostVotesController < ::ApplicationController
-    requires_login except: [:batch, :top]
+    requires_login except: [:batch, :top, :top_replies]
     skip_before_action :check_xhr, raise: false
 
     rescue_from ::Discourse::InvalidParameters do |e|
@@ -126,6 +126,65 @@ module DiscourseCoinEngine
         ORDER BY score DESC LIMIT 20
       SQL
       render json: { top: rows.map { |r| { topic_id: r['topic_id'].to_i, score: r['score'].to_i, title: r['title'], slug: r['slug'] } } }
+    end
+
+    # GET /coin-engine/votes/top_replies.json?topic_id=X&limit=3
+    # Highest-upvoted REPLIES (post_number > 1) in a topic, score-desc. Powers the
+    # pinned "Top reply" card so the most-upvoted reply surfaces above the stream
+    # without reordering Discourse's (anchor/threading-bound) chronological posts.
+    def top_replies
+      enabled = !!setting(:coin_engine_feed_voting_enabled, true)
+      topic_id = params[:topic_id].to_i
+      return render json: { replies: [], enabled: enabled } if topic_id <= 0
+      limit = params[:limit].present? ? [[params[:limit].to_i, 1].max, 10].min : 3
+
+      rows = ::ActiveRecord::Base.connection.exec_query(<<~SQL)
+        SELECT p.id AS post_id, p.post_number, p.user_id,
+               COALESCE(SUM(v.direction),0)::int AS score, COUNT(v.id)::int AS n
+        FROM posts p
+        JOIN coin_engine_post_votes v ON v.post_id = p.id
+        WHERE p.topic_id = #{topic_id} AND p.post_number > 1
+              AND p.deleted_at IS NULL AND COALESCE(p.hidden, false) = false
+        GROUP BY p.id, p.post_number, p.user_id
+        HAVING COALESCE(SUM(v.direction),0) > 0
+        ORDER BY score DESC, n DESC, p.post_number ASC
+        LIMIT #{limit}
+      SQL
+
+      post_ids = rows.map { |r| r['post_id'].to_i }
+      return render json: { replies: [], enabled: enabled, topic_id: topic_id } if post_ids.empty?
+
+      posts = ::Post.where(id: post_ids).index_by(&:id)
+      users = ::User.where(id: rows.map { |r| r['user_id'].to_i }.uniq).index_by(&:id)
+      topic = ::Topic.find_by(id: topic_id)
+      mine  = current_user ? PostVote.where(user_id: current_user.id, post_id: post_ids).pluck(:post_id, :direction).to_h : {}
+
+      replies = rows.filter_map do |r|
+        pid  = r['post_id'].to_i
+        post = posts[pid]
+        next nil unless post
+        u = users[r['user_id'].to_i]
+        excerpt = begin
+          ::PrettyText.excerpt(post.cooked.to_s, 200, keep_emoji_images: false)
+        rescue StandardError
+          post.raw.to_s[0, 200]
+        end
+        {
+          post_id: pid,
+          post_number: r['post_number'].to_i,
+          score: r['score'].to_i,
+          count: r['n'].to_i,
+          my_vote: (mine[pid] || 0),
+          excerpt: excerpt,
+          created_at: post.created_at,
+          url: topic ? "/t/#{topic.slug}/#{topic.id}/#{r['post_number'].to_i}" : nil,
+          username: u&.username,
+          name: u&.name,
+          avatar_template: u&.avatar_template
+        }
+      end
+
+      render json: { replies: replies, enabled: enabled, topic_id: topic_id }
     end
 
     private
