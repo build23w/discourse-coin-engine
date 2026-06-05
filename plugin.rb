@@ -611,6 +611,9 @@ after_initialize do
     post '/coin-engine/social/repost.json'                => 'discourse_coin_engine/social_graph#repost'
     get  '/coin-engine/social/feed.json'                  => 'discourse_coin_engine/social_graph#feed'
     get  '/coin-engine/social/reposts/:username.json'     => 'discourse_coin_engine/social_graph#reposts', constraints: { username: username_re }
+    get  '/coin-engine/social/followers/:username.json'   => 'discourse_coin_engine/social_graph#followers', constraints: { username: username_re }
+    get  '/coin-engine/social/following/:username.json'   => 'discourse_coin_engine/social_graph#following', constraints: { username: username_re }
+    get  '/coin-engine/social/analytics/:username.json'   => 'discourse_coin_engine/social_graph#analytics', constraints: { username: username_re }
     post '/coin-engine/social/mentorships.json'                      => 'discourse_coin_engine/social#create_mentorship'
     post '/coin-engine/social/mentorships/:id/accept.json'           => 'discourse_coin_engine/social#accept_mentorship', constraints: { id: %r{\d+} }
     get  '/coin-engine/social/spotlights.json'                       => 'discourse_coin_engine/social#list_spotlights'

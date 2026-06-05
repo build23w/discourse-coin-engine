@@ -2,7 +2,7 @@
 module DiscourseCoinEngine
   # One-way follows + reposts ("share to profile") + the deduped followed feed.
   class SocialGraphController < ::ApplicationController
-    requires_login except: %i[graph reposts]
+    requires_login except: %i[graph reposts followers following analytics]
     skip_before_action :check_xhr, raise: false
 
     rescue_from ::Discourse::InvalidParameters do |e|
@@ -75,6 +75,24 @@ module DiscourseCoinEngine
       rows = scope.limit(limit).map { |r| { "id" => r.id, "user_id" => r.user_id, "kind" => r.kind, "ref_id" => r.ref_id, "caption" => r.caption, "created_at" => r.created_at } }
       cards = SocialGraph.resolve_cards(rows, {})
       render json: { items: cards, cursor: (rows.last && rows.last["created_at"].to_time.to_i) }
+    end
+
+    # GET /coin-engine/social/followers/:username.json
+    def followers
+      u = ::User.find_by(username_lower: params[:username].to_s.downcase) or raise ::Discourse::NotFound
+      render json: { users: SocialGraph.followers_list(u.id, current_user&.id) }
+    end
+
+    # GET /coin-engine/social/following/:username.json
+    def following
+      u = ::User.find_by(username_lower: params[:username].to_s.downcase) or raise ::Discourse::NotFound
+      render json: { users: SocialGraph.following_list(u.id, current_user&.id) }
+    end
+
+    # GET /coin-engine/social/analytics/:username.json
+    def analytics
+      u = ::User.find_by(username_lower: params[:username].to_s.downcase) or raise ::Discourse::NotFound
+      render json: SocialGraph.analytics(u.id).merge(username: u.username)
     end
 
     private

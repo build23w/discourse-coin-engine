@@ -65,6 +65,50 @@ module DiscourseCoinEngine
 
     def repost_count(kind, ref_id); Repost.where(kind: kind, ref_id: ref_id).count; end
 
+    # ---- follower / following lists ----
+    def users_payload(ids, viewer_id)
+      return [] if ids.empty?
+      mine = viewer_id ? Follow.where(follower_id: viewer_id, following_id: ids).pluck(:following_id).to_set : Set.new
+      by_id = ::User.where(id: ids).index_by(&:id)
+      ids.filter_map do |id|
+        u = by_id[id]; next nil unless u
+        { username: u.username, name: u.name, avatar_template: u.avatar_template,
+          path: "/u/#{u.username}", is_following: mine.include?(u.id) }
+      end
+    end
+
+    def followers_list(uid, viewer_id, limit = 200)
+      ids = Follow.where(following_id: uid).order(created_at: :desc).limit(limit).pluck(:follower_id)
+      users_payload(ids, viewer_id)
+    end
+
+    def following_list(uid, viewer_id, limit = 200)
+      ids = Follow.where(follower_id: uid).order(created_at: :desc).limit(limit).pluck(:following_id)
+      users_payload(ids, viewer_id)
+    end
+
+    # ---- profile analytics: measurable social/content metrics ----
+    def analytics(uid)
+      a = { followers: followers_count(uid), following: following_count(uid),
+            reposts_made: Repost.where(user_id: uid).count, reposts_received: 0,
+            shorts: 0, short_likes: 0, short_views: 0, short_comments: 0, topics: 0 }
+      reposts_received = 0
+      if defined?(::DiscourseShorts::Short)
+        sc = ::DiscourseShorts::Short.where(submitted_by_id: uid)
+        sids = sc.pluck(:id)
+        a[:shorts] = sids.size
+        a[:short_likes] = sc.sum(:likes).to_i
+        a[:short_views] = sc.sum(:views).to_i
+        a[:short_comments] = sc.sum(:comment_count).to_i
+        reposts_received += Repost.where(kind: "short", ref_id: sids).count if sids.any?
+      end
+      tids = ::Topic.where(user_id: uid, deleted_at: nil).limit(5000).pluck(:id)
+      a[:topics] = tids.size
+      reposts_received += Repost.where(kind: "topic", ref_id: tids).count if tids.any?
+      a[:reposts_received] = reposts_received
+      a
+    end
+
     # ---- DEDUPED followed feed ----
     # Returns up to `limit` cards, each a distinct shared item, newest first,
     # capped per reposter. `before` = unix ts cursor for pagination.
