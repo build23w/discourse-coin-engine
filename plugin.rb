@@ -274,6 +274,10 @@ after_initialize do
   # v0.6.0 phase controllers
   load File.expand_path('../app/controllers/discourse_coin_engine/economy_controller.rb',    __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/social_controller.rb',     __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/follow.rb', __FILE__)
+  load File.expand_path('../app/models/discourse_coin_engine/repost.rb', __FILE__)
+  load File.expand_path('../lib/discourse_coin_engine/social_graph.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/social_graph_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/post_votes_controller.rb',  __FILE__)
   # v0.25.0 — user-created squads + shareable squad page
   load File.expand_path('../app/controllers/discourse_coin_engine/squad_controller.rb',       __FILE__)
@@ -601,6 +605,12 @@ after_initialize do
     put  '/coin-engine/social/squads/:slug.json'                     => 'discourse_coin_engine/social#update_squad'
     post '/coin-engine/social/squads/:slug/join.json'                => 'discourse_coin_engine/social#join_squad'
     post '/coin-engine/social/squads/leave.json'                     => 'discourse_coin_engine/social#leave_squad'
+    # ===== Social graph: one-way follows + reposts ("share to profile") =====
+    post '/coin-engine/social/follow.json'                => 'discourse_coin_engine/social_graph#follow'
+    get  '/coin-engine/social/graph/:username.json'       => 'discourse_coin_engine/social_graph#graph', constraints: { username: username_re }
+    post '/coin-engine/social/repost.json'                => 'discourse_coin_engine/social_graph#repost'
+    get  '/coin-engine/social/feed.json'                  => 'discourse_coin_engine/social_graph#feed'
+    get  '/coin-engine/social/reposts/:username.json'     => 'discourse_coin_engine/social_graph#reposts', constraints: { username: username_re }
     post '/coin-engine/social/mentorships.json'                      => 'discourse_coin_engine/social#create_mentorship'
     post '/coin-engine/social/mentorships/:id/accept.json'           => 'discourse_coin_engine/social#accept_mentorship', constraints: { id: %r{\d+} }
     get  '/coin-engine/social/spotlights.json'                       => 'discourse_coin_engine/social#list_spotlights'
@@ -909,3 +919,4 @@ after_initialize do
     end
   end
 end
+                                                         
