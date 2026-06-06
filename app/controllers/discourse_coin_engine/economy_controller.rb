@@ -13,6 +13,7 @@ module DiscourseCoinEngine
     # ===== Tips =====
     # POST /coin-engine/economy/tips.json { recipient_username, amount, post_id?, note? }
     def create_tip
+      RateLimiter.new(current_user, 'ce_tip_create', 30, 1.hour).performed!
       raise Discourse::InvalidAccess unless current_user
       recipient = ::User.find_by(username_lower: params[:recipient_username].to_s.downcase)
       return render_json_error('recipient not found', status: 404) unless recipient
@@ -94,6 +95,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/economy/shop/:slug/redeem.json
     def redeem_shop_item
+      RateLimiter.new(current_user, 'ce_shop_redeem', 20, 1.day).performed!
       item = ShopItem.enabled.find_by(slug: params[:slug])
       return render_json_error('item not found', status: 404) unless item
       return render_json_error('out of stock', status: 422) unless item.in_stock?
@@ -127,6 +129,7 @@ module DiscourseCoinEngine
     #   { topic_id, post_id?, amount, note?, expires_in_days?,
     #     bounty_type? (manual|random_reach), max_winners?, invite_count?, window_minutes? }
     def create_bounty
+      RateLimiter.new(current_user, 'ce_bounty_create', 10, 1.day).performed!
       amount = params[:amount].to_i
       return render_json_error('amount must be positive') if amount <= 0
       bal = ::DiscourseCoinEngine.coin_user_total(current_user.id)
@@ -183,6 +186,7 @@ module DiscourseCoinEngine
     # the post_created DiscourseEvent hook in plugin.rb when an invited user
     # posts a reply on the bounty topic.
     def claim_bounty
+      RateLimiter.new(current_user, 'ce_bounty_claim', 30, 1.hour).performed!
       bounty = Bounty.find_by(id: params[:id])
       return render_json_error('bounty not found', status: 404) unless bounty
       result = ::DiscourseCoinEngine::BountyDispatcher.attempt_claim!(bounty, current_user, nil)
@@ -191,6 +195,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/economy/bounties/:id/award.json { winning_post_id }
     def award_bounty
+      RateLimiter.new(current_user, 'ce_bounty_award', 30, 1.hour).performed!
       bounty = Bounty.find_by(id: params[:id])
       return render_json_error('bounty not found', status: 404) unless bounty
       return render_json_error('only the poster can award', status: 403) unless bounty.poster_user_id == current_user.id
@@ -232,6 +237,7 @@ module DiscourseCoinEngine
     # ===== Stakes =====
     # POST /coin-engine/economy/stakes.json { amount, duration_days }
     def create_stake
+      RateLimiter.new(current_user, 'ce_stake_create', 20, 1.day).performed!
       amount = params[:amount].to_i
       duration = params[:duration_days].to_i
       return render_json_error('amount must be positive') if amount <= 0
@@ -265,6 +271,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/economy/stakes/:id/unstake.json
     def unstake
+      RateLimiter.new(current_user, 'ce_unstake', 20, 1.day).performed!
       stake = Stake.find_by(id: params[:id], user_id: current_user.id)
       return render_json_error('stake not found', status: 404) unless stake
       return render_json_error('already unstaked') if stake.status != 'active'

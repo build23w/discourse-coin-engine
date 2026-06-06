@@ -19,6 +19,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/quests/claim_batch.json
     def claim_batch
+      RateLimiter.new(current_user, 'ce_quest_claim_batch', 60, 1.hour).performed!
       raise Discourse::InvalidAccess unless current_user
       ids = Array(params[:quest_ids]).map(&:to_s).reject(&:empty?).first(BATCH_LIMIT)
       return render(json: { results: [] }) if ids.empty?

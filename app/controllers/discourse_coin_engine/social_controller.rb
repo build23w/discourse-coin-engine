@@ -75,6 +75,7 @@ module DiscourseCoinEngine
 
     # PUT /coin-engine/social/squads/:slug.json — captain (or staff) edits cosmetics
     def update_squad
+      RateLimiter.new(current_user, 'ce_squad_update', 20, 1.day).performed!
       squad = Squad.find_by(slug: params[:slug])
       return render_json_error('squad not found', status: 404) unless squad
       m = SquadMembership.find_by(squad_id: squad.id, user_id: current_user.id)
@@ -93,6 +94,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/social/squads/:slug/join.json
     def join_squad
+      RateLimiter.new(current_user, 'ce_squad_join', 20, 1.day).performed!
       squad = Squad.enabled.find_by(slug: params[:slug])
       return render_json_error('squad not found', status: 404) unless squad
       return render_json_error('You are already in a squad - leave it first.') if SquadMembership.exists?(user_id: current_user.id)
@@ -107,6 +109,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/social/squads/leave.json
     def leave_squad
+      RateLimiter.new(current_user, 'ce_squad_leave', 20, 1.day).performed!
       m = SquadMembership.find_by(user_id: current_user.id)
       return render_json_error('not in a squad') unless m
       squad_id = m.squad_id
@@ -127,6 +130,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/social/mentorships.json { mentee_username, note? }
     def create_mentorship
+      RateLimiter.new(current_user, 'ce_mentor_create', 10, 1.day).performed!
       mentee = ::User.find_by(username_lower: params[:mentee_username].to_s.downcase)
       return render_json_error('mentee not found', status: 404) unless mentee
       return render_json_error('cannot mentor yourself') if mentee.id == current_user.id
@@ -143,6 +147,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/social/mentorships/:id/accept.json
     def accept_mentorship
+      RateLimiter.new(current_user, 'ce_mentor_accept', 30, 1.day).performed!
       m = Mentorship.find_by(id: params[:id])
       return render_json_error('mentorship not found', status: 404) unless m
       return render_json_error('only mentee can accept', status: 403) unless m.mentee_user_id == current_user.id

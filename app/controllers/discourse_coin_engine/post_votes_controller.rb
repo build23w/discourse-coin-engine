@@ -173,7 +173,7 @@ module DiscourseCoinEngine
             next nil unless post
             u = users[r['user_id'].to_i]
             excerpt = begin
-              ::PrettyText.excerpt(post.cooked.to_s, 200, keep_emoji_images: false)
+              ::PrettyText.excerpt(post.cooked.to_s, 200, keep_emoji_images: true)
             rescue StandardError
               post.raw.to_s[0, 200]
             end

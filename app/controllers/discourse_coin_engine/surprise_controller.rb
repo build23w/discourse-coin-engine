@@ -10,6 +10,7 @@ module DiscourseCoinEngine
     # POST /coin-engine/surprise/chest/claim.json
     # Variable-reward draw. 1/day per user.
     def claim_chest
+      RateLimiter.new(current_user, 'ce_chest_claim', 10, 1.hour).performed!
       today = Date.today
       existing = DailyChest.find_by(user_id: current_user.id, claim_date: today)
       return render json: { already_claimed: true, claimed_at: existing.created_at, amount: existing.reward_amount }, status: 200 if existing
@@ -40,6 +41,7 @@ module DiscourseCoinEngine
     # ===== Streak Freeze =====
     # POST /coin-engine/surprise/streak_freeze.json { date }
     def use_streak_freeze
+      RateLimiter.new(current_user, 'ce_streak_freeze', 10, 1.day).performed!
       cost = (SiteSetting.coin_engine_streak_freeze_cost rescue 50).to_i
       d = Date.parse(params[:date].to_s) rescue Date.today
       return render_json_error('cannot freeze future dates') if d > Date.today
@@ -85,6 +87,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/surprise/auctions/:slug/bid.json { amount }
     def bid_auction
+      RateLimiter.new(current_user, 'ce_auction_bid', 60, 1.hour).performed!
       a = Auction.find_by(slug: params[:slug])
       return render_json_error('auction not found', status: 404) unless a
       return render_json_error('auction is not live') unless a.live?

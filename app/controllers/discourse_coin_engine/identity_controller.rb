@@ -36,6 +36,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/identity/tournaments/:slug/enter.json { topic_id?, post_id? }
     def enter_tournament
+      RateLimiter.new(current_user, 'ce_tourn_enter', 5, 1.day).performed!
       t = Tournament.find_by(slug: params[:slug])
       return render_json_error('tournament not found', status: 404) unless t
       return render_json_error('tournament not open for entries') unless %w[upcoming active].include?(t.status)
@@ -50,6 +51,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/identity/tournaments/:slug/vote.json { entry_id }
     def vote_tournament
+      RateLimiter.new(current_user, 'ce_tourn_vote', 60, 1.day).performed!
       t = Tournament.find_by(slug: params[:slug])
       return render_json_error('tournament not found', status: 404) unless t
       return render_json_error('tournament not in voting phase') unless t.status == 'voting'
@@ -62,6 +64,7 @@ module DiscourseCoinEngine
     # ===== AMA Bookings =====
     # POST /coin-engine/identity/ama.json { title, description, scheduled_at }
     def create_ama_booking
+      RateLimiter.new(current_user, 'ce_ama_create', 5, 1.day).performed!
       cost = (SiteSetting.coin_engine_ama_booking_cost rescue 100).to_i
       bal = ::DiscourseCoinEngine.coin_user_total(current_user.id)
       return render_json_error('insufficient balance', status: 422) if bal < cost
@@ -95,6 +98,7 @@ module DiscourseCoinEngine
     # ===== Quest Suggestions =====
     # POST /coin-engine/identity/quest_suggestions.json { title, description }
     def create_quest_suggestion
+      RateLimiter.new(current_user, 'ce_quest_suggest', 10, 1.day).performed!
       qs = QuestSuggestion.create!(
         suggester_user_id: current_user.id,
         title: params[:title].to_s[0, 200],
@@ -113,6 +117,7 @@ module DiscourseCoinEngine
     # ===== Photo Bounties =====
     # POST /coin-engine/identity/photo_bounties.json { name, requirements, reward, expires_in_days?, max_winners? }
     def create_photo_bounty
+      RateLimiter.new(current_user, 'ce_photo_bounty', 10, 1.day).performed!
       reward = params[:reward].to_i
       return render_json_error('reward must be positive') if reward <= 0
       bal = ::DiscourseCoinEngine.coin_user_total(current_user.id)

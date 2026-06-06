@@ -23,6 +23,7 @@ module DiscourseCoinEngine
 
     # POST /coin-engine/governance/votes/:slug/cast.json { option_key }
     def cast_vote
+      RateLimiter.new(current_user, 'ce_gov_vote', 30, 1.hour).performed!
       v = Vote.find_by(slug: params[:slug])
       return render_json_error('vote not found', status: 404) unless v
       return render_json_error('vote is closed') unless v.status == 'open' && v.ends_at > Time.now
