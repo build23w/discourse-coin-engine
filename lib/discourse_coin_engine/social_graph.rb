@@ -31,7 +31,7 @@ module DiscourseCoinEngine
       return false if follower.id == following_id.to_i
       return false unless ::User.exists?(id: following_id)
       Follow.create!(follower_id: follower.id, following_id: following_id)
-      bust_follow_cache(follower.id)
+      bust_follow_cache(follower.id); bust_followers_cache(following_id)
       true
     rescue ActiveRecord::RecordNotUnique
       true
@@ -39,12 +39,16 @@ module DiscourseCoinEngine
 
     def unfollow!(follower, following_id)
       Follow.where(follower_id: follower.id, following_id: following_id).delete_all
-      bust_follow_cache(follower.id)
+      bust_follow_cache(follower.id); bust_followers_cache(following_id)
       false
     end
 
-    def followers_count(uid); Follow.where(following_id: uid).count; end
-    def following_count(uid); Follow.where(follower_id: uid).count; end
+    # Cached so a traffic spike of profile views doesn't hammer the DB with COUNTs.
+    def followers_count(uid)
+      Discourse.cache.fetch("ce_followers_#{uid}", expires_in: 60.seconds) { Follow.where(following_id: uid).count }
+    end
+    def following_count(uid); following_ids(uid).length; end  # reuse the cached following_ids set
+    def bust_followers_cache(uid); Discourse.cache.delete("ce_followers_#{uid}"); Discourse.cache.delete("ce_analytics_#{uid}"); end
 
     # ---- reposts ----
     def reposted?(uid, kind, ref_id)
@@ -95,6 +99,10 @@ module DiscourseCoinEngine
 
     # ---- profile analytics: measurable social/content metrics ----
     def analytics(uid)
+      Discourse.cache.fetch("ce_analytics_#{uid}", expires_in: 120.seconds) { compute_analytics(uid) }
+    end
+
+    def compute_analytics(uid)
       a = { followers: followers_count(uid), following: following_count(uid),
             reposts_made: Repost.where(user_id: uid).count, reposts_received: 0,
             shorts: 0, short_likes: 0, short_views: 0, short_comments: 0, topics: 0 }
