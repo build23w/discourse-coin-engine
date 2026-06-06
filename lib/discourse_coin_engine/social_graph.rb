@@ -65,6 +65,12 @@ module DiscourseCoinEngine
 
     def repost_count(kind, ref_id); Repost.where(kind: kind, ref_id: ref_id).count; end
 
+    # which of these ref_ids the user has already reposted (for button state)
+    def my_reposts(uid, kind, ref_ids)
+      return [] unless uid && ref_ids && ref_ids.any?
+      Repost.where(user_id: uid, kind: kind, ref_id: ref_ids).pluck(:ref_id)
+    end
+
     # ---- follower / following lists ----
     def users_payload(ids, viewer_id)
       return [] if ids.empty?

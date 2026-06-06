@@ -2,7 +2,7 @@
 module DiscourseCoinEngine
   # One-way follows + reposts ("share to profile") + the deduped followed feed.
   class SocialGraphController < ::ApplicationController
-    requires_login except: %i[graph reposts followers following analytics]
+    requires_login except: %i[graph reposts followers following analytics my_reposts]
     skip_before_action :check_xhr, raise: false
 
     rescue_from ::Discourse::InvalidParameters do |e|
@@ -95,7 +95,21 @@ module DiscourseCoinEngine
       render json: SocialGraph.analytics(u.id).merge(username: u.username)
     end
 
+    # GET /coin-engine/social/my_reposts.json?topic_ids=1,2&short_ids=3,4
+    def my_reposts
+      return render(json: { topics: [], shorts: [] }) unless current_user
+      tids = parse_ids(params[:topic_ids]); sids = parse_ids(params[:short_ids])
+      render json: {
+        topics: SocialGraph.my_reposts(current_user.id, "topic", tids),
+        shorts: SocialGraph.my_reposts(current_user.id, "short", sids)
+      }
+    end
+
     private
+
+    def parse_ids(raw)
+      raw.to_s.split(",").map(&:to_i).reject { |i| i <= 0 }.first(100)
+    end
 
     def lookup_user
       if params[:user_id].present?
