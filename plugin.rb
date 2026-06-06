@@ -281,6 +281,7 @@ after_initialize do
   load File.expand_path('../app/controllers/discourse_coin_engine/post_votes_controller.rb',  __FILE__)
   # v0.25.0 — user-created squads + shareable squad page
   load File.expand_path('../app/controllers/discourse_coin_engine/squad_controller.rb',       __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/pin_controller.rb',         __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/identity_controller.rb',   __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/governance_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/surprise_controller.rb',   __FILE__)
@@ -303,6 +304,7 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/bounty_invitation.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/bounty_claim.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/squad.rb', __FILE__)
+  load File.expand_path('../lib/discourse_coin_engine/squad_hq.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/achievement.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/vote.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/daily_chest.rb', __FILE__)
@@ -563,6 +565,9 @@ after_initialize do
     get  '/coin-engine/embed/u/:username'                            => 'discourse_coin_engine/embed#show', constraints: { username: username_re }, defaults: { format: :html }
     get  '/coin-engine/embed/u/:username.svg'                        => 'discourse_coin_engine/embed#show', constraints: { username: username_re }, defaults: { format: :svg }
     get  '/coin-engine/embed/u/:username.json'                       => 'discourse_coin_engine/embed#show', constraints: { username: username_re }, defaults: { format: :json }
+    get  '/coin-engine/pin/:username.svg'                            => 'discourse_coin_engine/pin#svg',   constraints: { username: username_re }, defaults: { format: :svg }
+    get  '/coin-engine/pin/:username/embed.json'                     => 'discourse_coin_engine/pin#embed', constraints: { username: username_re }
+    post '/admin/coin-engine/pins/:user_id.json'                     => 'discourse_coin_engine/pin#grant', constraints: { user_id: %r{\d+} }
 
     # ===== v0.5.0: Public profile showcase (SEO-rich, indexable) =====
     get  '/coin-engine/u/:username'                                  => 'discourse_coin_engine/profile#show', constraints: { username: username_re }, defaults: { format: :html }

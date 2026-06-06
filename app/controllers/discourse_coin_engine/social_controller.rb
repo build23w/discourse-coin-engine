@@ -65,6 +65,7 @@ module DiscourseCoinEngine
         )
         SquadMembership.create!(squad_id: squad.id, user_id: current_user.id, role: 'captain', joined_at: Time.now)
       end
+      DiscourseCoinEngine::SquadHq.ensure_hq!(squad)
       render json: { squad: serialize_squad(squad).merge(rank: nil, joined: true, my_role: 'captain') }
     rescue RateLimiter::LimitExceeded => e
       render_json_error("Slow down - try again in #{e.available_in}s.", status: 429)
@@ -97,6 +98,8 @@ module DiscourseCoinEngine
       return render_json_error('You are already in a squad - leave it first.') if SquadMembership.exists?(user_id: current_user.id)
       m = SquadMembership.create!(squad_id: squad.id, user_id: current_user.id, role: 'member', joined_at: Time.now)
       squad.increment!(:member_count)
+      DiscourseCoinEngine::SquadHq.ensure_hq!(squad)        # creates HQ at threshold (backfills group)
+      DiscourseCoinEngine::SquadHq.sync_member!(squad, current_user, :add)
       render json: { membership_id: m.id, squad: squad.slug }
     rescue ActiveRecord::RecordNotUnique
       render_json_error('You are already in this squad.')
@@ -110,6 +113,9 @@ module DiscourseCoinEngine
       was_captain = m.role == 'captain'
       m.destroy
       Squad.where(id: squad_id).update_all('member_count = GREATEST(member_count - 1, 0)')
+      if (sq = Squad.find_by(id: squad_id))
+        DiscourseCoinEngine::SquadHq.sync_member!(sq, current_user, :remove)
+      end
       # Hand the captaincy to the longest-tenured remaining member so a squad
       # is never left leaderless after its captain departs.
       if was_captain

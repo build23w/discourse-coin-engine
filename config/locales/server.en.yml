@@ -68,3 +68,6 @@ en:
       subject: "+%{amount} %{coin} -- receipt #%{payment_id}"
   coin_engine:
     title: "Coin Engine"
+    coin_engine_squad_hq_enabled: "Give enabled squads their own HQ subcategory (public read, members post) once they hit the member threshold."
+    coin_engine_squad_hq_parent_category_id: "Parent category that squad HQ subcategories are created under."
+    coin_engine_squad_hq_min_members: "Members a squad needs before its HQ subcategory is created."
