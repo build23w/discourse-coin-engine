@@ -187,7 +187,14 @@ module ::DiscourseCoinEngine
     uid = user_id.to_i
     return nil if uid <= 0
     ranks = Rails.cache.fetch('coin_engine_all_ranks', expires_in: 10.minutes) do
-      sql = "SELECT user_id, RANK() OVER (ORDER BY SUM(score) DESC)::int AS rank FROM gamification_scores WHERE user_id > 0 GROUP BY user_id"
+      # Filter matches the VISIBLE gamification leaderboard (active, non-staged,
+      # non-suspended users) — previously raw sums included hidden/suspended
+      # accounts, so the chip could say #2 while the leaderboard showed #1.
+      sql = "SELECT gs.user_id, RANK() OVER (ORDER BY SUM(gs.score) DESC)::int AS rank " \
+            "FROM gamification_scores gs JOIN users u ON u.id = gs.user_id " \
+            "WHERE gs.user_id > 0 AND u.active = true AND u.staged = false " \
+            "AND (u.suspended_till IS NULL OR u.suspended_till < now()) " \
+            "GROUP BY gs.user_id"
       ActiveRecord::Base.connection.exec_query(sql, 'coin_engine_all_ranks').rows.each_with_object({}) { |(u, r), h| h[u.to_i] = r.to_i }
     end
     ranks[uid]

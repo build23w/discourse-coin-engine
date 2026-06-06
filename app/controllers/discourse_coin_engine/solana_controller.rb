@@ -123,16 +123,24 @@ module DiscourseCoinEngine
     # blockhash = no stake / buy / store purchase). With 3 candidates x 2
     # attempts the proxy now rides through the common one-off RPC blips.
     RPC_RETRIES = 2
+    # 2026-06-06: HARD TOTAL DEADLINE across the whole fallback chain. Worst case
+    # used to stack to (candidates x retries x 16s) ≈ 100s inside a WEB worker —
+    # the "Pitchfork worker is about to timeout" backtraces in production logs.
+    # 18s total keeps us safely under the worker timeout while still riding
+    # through one slow node.
+    RPC_TOTAL_DEADLINE_S = 18
 
     def call_rpc(method:, params:)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       body = { jsonrpc: '2.0', id: 1, method: method, params: params }.to_json
       rpc_candidates.each do |url|
         RPC_RETRIES.times do |attempt|
+          return nil if Process.clock_gettime(Process::CLOCK_MONOTONIC) - started > RPC_TOTAL_DEADLINE_S
           begin
             uri = URI(url)
             req = Net::HTTP::Post.new(uri.request_uri, 'Content-Type' => 'application/json', 'Accept' => 'application/json')
             req.body = body
-            res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', read_timeout: 10, open_timeout: 6) { |h| h.request(req) }
+            res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https', read_timeout: 6, open_timeout: 4) { |h| h.request(req) }
             parsed = JSON.parse(res.body) rescue nil
             if parsed && parsed['result']
               @rpc_used = url

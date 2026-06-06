@@ -16,14 +16,18 @@ module DiscourseCoinEngine
       return false if email.empty?
       return false if email.end_with?("@#{PLACEHOLDER_DOMAIN}")
 
-      cf = user.user_custom_fields || {}
+      # BUG FIX (2026-06-06): user.user_custom_fields is the AR association
+      # (an ARRAY of records) — indexing it with a string key raised TypeError
+      # for every user who HAS custom fields, and the fail-closed rescue then
+      # silently blocked their email. user.custom_fields is the hash API.
+      cf = user.custom_fields || {}
       return false if cf[NO_EMAIL_FIELD].to_s == '1'
 
       if cf[UNVERIFIED_FIELD].to_s == '1'
         if ::EmailToken.where(user_id: user.id, email: email, confirmed: true).exists?
           # Auto-clear: verification has completed via standard prefs flow.
           ::UserCustomField.where(user_id: user.id, name: UNVERIFIED_FIELD).delete_all
-          user.user_custom_fields.delete(UNVERIFIED_FIELD) if user.user_custom_fields.respond_to?(:delete)
+          user.custom_fields.delete(UNVERIFIED_FIELD) rescue nil
           return true
         end
         return false

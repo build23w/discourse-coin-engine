@@ -48,8 +48,12 @@ module DiscourseCoinEngine
       begin
         sql = <<~SQL
           WITH totals AS (
-            SELECT user_id, SUM(score) AS total
-            FROM gamification_scores WHERE user_id > 0 GROUP BY user_id
+            SELECT gs.user_id, SUM(gs.score) AS total
+            FROM gamification_scores gs
+            JOIN users u ON u.id = gs.user_id
+            WHERE gs.user_id > 0 AND u.active = true AND u.staged = false
+              AND (u.suspended_till IS NULL OR u.suspended_till < now())
+            GROUP BY gs.user_id
           )
           SELECT rank FROM (
             SELECT user_id, RANK() OVER (ORDER BY total DESC) AS rank FROM totals
