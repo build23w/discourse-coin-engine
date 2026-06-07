@@ -157,17 +157,8 @@ module DiscourseCoinEngine
       end
 
       def current_user_rank(user_id)
-        sql = <<~SQL
-          WITH totals AS (
-            SELECT user_id, SUM(score) AS total
-            FROM gamification_scores WHERE user_id > 0 GROUP BY user_id
-          )
-          SELECT rank FROM (
-            SELECT user_id, RANK() OVER (ORDER BY total DESC) AS rank FROM totals
-          ) ranked WHERE user_id = $1
-        SQL
-        result = ActiveRecord::Base.connection.exec_query(sql, 'ce_quest_rank', [user_id])
-        result.rows.first&.first&.to_i
+        # Canonical shared helper — same filter as the public leaderboard.
+        ::DiscourseCoinEngine.rank_for(user_id)
       rescue StandardError
         nil
       end

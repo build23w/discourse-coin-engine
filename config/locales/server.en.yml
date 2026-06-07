@@ -71,3 +71,5 @@ en:
     coin_engine_squad_hq_enabled: "Give enabled squads their own HQ subcategory (public read, members post) once they hit the member threshold."
     coin_engine_squad_hq_parent_category_id: "Parent category that squad HQ subcategories are created under."
     coin_engine_squad_hq_min_members: "Members a squad needs before its HQ subcategory is created."
+    coin_engine_weekly_recap_topic_enabled: "Post a public 'Top Builders of the week' recap topic every week."
+    coin_engine_weekly_recap_category_id: "Category for the weekly Top Builders recap topic (0 = disabled)."

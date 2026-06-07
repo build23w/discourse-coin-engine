@@ -465,3 +465,8 @@ plugins:
     default: 3
     min: 1
     max: 100
+  # ===== Weekly Top Builders recap topic =====
+  coin_engine_weekly_recap_topic_enabled:
+    default: false
+  coin_engine_weekly_recap_category_id:
+    default: 0

@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.31.0
+# version: 0.31.1
 # authors: LF Builders
 # required_version: 3.2.0
 
@@ -187,14 +187,16 @@ module ::DiscourseCoinEngine
     uid = user_id.to_i
     return nil if uid <= 0
     ranks = Rails.cache.fetch('coin_engine_all_ranks', expires_in: 10.minutes) do
-      # Filter matches the VISIBLE gamification leaderboard (active, non-staged,
-      # non-suspended users) — previously raw sums included hidden/suspended
-      # accounts, so the chip could say #2 while the leaderboard showed #1.
+      # v0.31.1: filter mirrors LeaderboardQuery EXACTLY (active, not silenced,
+      # not suspended, positive total) so every rank surface — profile chip,
+      # embed badge, quest validator, /leaderboard — reports the SAME number.
+      # Divergent filters here previously made the chip say #2 while the
+      # public leaderboard showed #1.
       sql = "SELECT gs.user_id, RANK() OVER (ORDER BY SUM(gs.score) DESC)::int AS rank " \
             "FROM gamification_scores gs JOIN users u ON u.id = gs.user_id " \
-            "WHERE gs.user_id > 0 AND u.active = true AND u.staged = false " \
-            "AND (u.suspended_till IS NULL OR u.suspended_till < now()) " \
-            "GROUP BY gs.user_id"
+            "WHERE gs.user_id > 0 AND u.active = TRUE " \
+            "AND u.silenced_till IS NULL AND u.suspended_till IS NULL " \
+            "GROUP BY gs.user_id HAVING SUM(gs.score) > 0"
       ActiveRecord::Base.connection.exec_query(sql, 'coin_engine_all_ranks').rows.each_with_object({}) { |(u, r), h| h[u.to_i] = r.to_i }
     end
     ranks[uid]
@@ -935,4 +937,3 @@ after_initialize do
     end
   end
 end
-                                                         

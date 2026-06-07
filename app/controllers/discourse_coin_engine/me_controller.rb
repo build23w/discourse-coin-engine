@@ -43,23 +43,9 @@ module DiscourseCoinEngine
         sources[:by_date] = []
       end
 
-      # Live rank
-      rank = nil
-      begin
-        sql = <<~SQL
-          WITH totals AS (
-            SELECT gs.user_id, SUM(gs.score) AS total
-            FROM gamification_scores gs
-            JOIN users u ON u.id = gs.user_id
-            WHERE gs.user_id > 0 AND u.active = true AND u.staged = false
-              AND (u.suspended_till IS NULL OR u.suspended_till < now())
-            GROUP BY gs.user_id
-          )
-          SELECT rank FROM (
-            SELECT user_id, RANK() OVER (ORDER BY total DESC) AS rank FROM totals
-          ) ranked WHERE user_id = #{uid.to_i}
-        SQL
-        rank = ActiveRecord::Base.connection.exec_query(sql).rows.first&.first&.to_i
+      # Live rank — canonical shared helper (matches the public leaderboard)
+      rank = begin
+        ::DiscourseCoinEngine.rank_for(uid)
       rescue StandardError
         nil
       end
