@@ -28,6 +28,7 @@ module DiscourseCoinEngine
     # name is empty, no category AND no hashtag is set, or end-date is
     # in the past.
     def active?
+      return false unless SiteSetting.coin_engine_themed_week_enabled
       name = SiteSetting.coin_engine_themed_week_name.to_s.strip
       return false if name.empty?
 

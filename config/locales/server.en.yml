@@ -28,6 +28,7 @@ en:
     coin_engine_public_profile_enabled: "Enable the SEO-rich public profile page at /coin-engine/u/:username. Indexable by search engines."
     coin_engine_embed_badge_enabled: "Enable the embeddable tier badge at /coin-engine/embed/u/:username (HTML, SVG, JSON formats)."
     coin_engine_streak_calendar_enabled: "Show the GitHub-style streak heatmap in the FAB Stats tab."
+    coin_engine_themed_week_enabled: "Master toggle for the Themed Week event (banner, endpoint, and per-post bonus credits)."
     coin_engine_themed_week_name: "Currently active themed week display name (e.g. 'Kitchen Week'). Empty disables the themed-week banner."
     coin_engine_themed_week_tagline: "Short tagline shown under the themed week name."
     coin_engine_themed_week_hashtag: "Hashtag promoted with the themed week (e.g. 'KitchenWeek2026')."

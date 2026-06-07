@@ -765,6 +765,7 @@ after_initialize do
 
   # v0.5.0 — Themed-week summary (site-wide).
   add_to_serializer(:site, :coin_engine_themed_week, include_condition: -> { SiteSetting.coin_engine_enabled }) do
+    next nil unless SiteSetting.coin_engine_themed_week_enabled
     name = SiteSetting.coin_engine_themed_week_name.to_s
     next nil if name.blank?
     {

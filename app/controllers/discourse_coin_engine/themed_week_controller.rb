@@ -14,6 +14,7 @@ module DiscourseCoinEngine
 
     def show
       return render json: { active: false }, status: 200 unless SiteSetting.coin_engine_enabled
+      return render json: { active: false }, status: 200 unless SiteSetting.coin_engine_themed_week_enabled
 
       cat_id   = SiteSetting.coin_engine_themed_week_category_id.to_i
       name     = SiteSetting.coin_engine_themed_week_name.to_s

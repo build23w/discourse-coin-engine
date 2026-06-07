@@ -112,6 +112,9 @@ plugins:
     client: true
 
   # ===== v0.5.0: Themed week (rotates weekly via admin) =====
+  coin_engine_themed_week_enabled:
+    default: true
+    client: true
   coin_engine_themed_week_name:
     default: ""
     client: true
