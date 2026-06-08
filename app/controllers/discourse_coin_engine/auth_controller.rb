@@ -32,7 +32,7 @@ module DiscourseCoinEngine
       end
 
       # Per-IP rate limit. Generous because users may retry on Phantom-decline.
-      RateLimiter.new(nil, "phantom_nonce_#{request.remote_ip}", 30, 1.hour).performed!
+      RateLimiter.new(nil, "phantom_nonce_#{client_ip}", 30, 1.hour).performed!
 
       nonce  = SecureRandom.hex(16)
       domain = (SiteSetting.force_hostname.presence || ::Discourse.base_url.gsub(%r{^https?://}, '')).to_s
@@ -77,7 +77,7 @@ module DiscourseCoinEngine
         return render json: { errors: ['This forum is invite-only.'] }, status: 403
       end
 
-      RateLimiter.new(nil, "phantom_signup_#{request.remote_ip}", 5, 1.hour).performed!
+      RateLimiter.new(nil, "phantom_signup_#{client_ip}", 5, 1.hour).performed!
 
       pubkey       = params[:public_key].to_s.strip
       signature_b64 = params[:signature].to_s.strip
@@ -370,6 +370,10 @@ module DiscourseCoinEngine
     end
 
     private
+
+    def client_ip
+      (request.get_header("HTTP_CF_CONNECTING_IP").presence || request.remote_ip)
+    end
 
     # ed25519 signature verification via Ruby stdlib OpenSSL.
     #
