@@ -8,6 +8,14 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
   # here, inside the class body, removes the ordering dependency entirely.
   prepend_view_path File.expand_path('../../views', __FILE__)
 
+  # 2026-06-10 (CE-014): the dbb518f rebuild fixed template resolution, which
+  # exposed the next layer — core's layouts/email_template.html.erb calls
+  # email_html_template (EmailHelper) which calls html_lang (ApplicationHelper).
+  # Core's UserNotifications gets both via `helper :application, :email`; without
+  # them every action died at layout render: ActionView::Template::Error
+  # (undefined method 'email_html_template') ×48 @16:01Z.
+  helper :application, :email
+
   default from: -> { SiteSetting.notification_email }
   layout 'email_template'
 
