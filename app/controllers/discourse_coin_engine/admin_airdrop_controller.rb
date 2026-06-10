@@ -63,7 +63,10 @@ module DiscourseCoinEngine
       end
 
       # 3. Email recipient
-      if SiteSetting.coin_engine_emails_enabled && user.email_digests
+      # v0.32.1 (CE-012) — email_digests lives on user_options in modern Discourse;
+      # user.email_digests raises NoMethodError and 500s the whole airdrop AFTER the
+      # score credit has applied (steps run in sequence, this if-condition was unrescued).
+      if SiteSetting.coin_engine_emails_enabled && user.user_option&.email_digests
         begin
           DiscourseCoinEngineMailer.airdrop_notification(user: user, amount: amount, reason: reason).deliver_later
           results[:email_sent] = true
