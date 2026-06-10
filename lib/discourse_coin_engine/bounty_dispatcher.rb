@@ -110,7 +110,13 @@ module DiscourseCoinEngine
         # Atomic claim with capacity check.
         # SQL: insert claim row UNLESS already-claimed; bump counter atomically;
         # if counter would exceed max_winners, rollback.
-        share = (bounty.amount.to_i / [bounty.max_winners.to_i, 1].max)
+        # v0.33.0 CE-018 — integer division used to burn the remainder
+        # (10 coins / 3 winners paid 9). The claim that FILLS the bounty now
+        # collects the dust so payouts always sum to bounty.amount.
+        winners = [bounty.max_winners.to_i, 1].max
+        share   = bounty.amount.to_i / winners
+        dust    = bounty.amount.to_i - (share * winners)
+        payout  = share
         granted = false
         ActiveRecord::Base.transaction do
           # Atomic insert claim — uniqueness on (bounty_id, user_id) prevents double-claim.
@@ -146,15 +152,25 @@ module DiscourseCoinEngine
             return { ok: false, reason: 'bounty_full' }
           end
 
+          # v0.33.0 CE-018 — the closing claim collects the division dust.
+          closing = row['claims_count'].to_i >= row['max_winners'].to_i
+          payout  = share + (closing ? dust : 0)
+          if closing && dust > 0
+            ActiveRecord::Base.connection.execute(
+              "UPDATE coin_engine_bounty_claims SET awarded_amount = #{payout.to_i} " \
+              "WHERE bounty_id = #{bounty.id.to_i} AND user_id = #{user.id.to_i}"
+            )
+          end
+
           # Credit the winner
-          ::DiscourseCoinEngine.credit_score(user.id, Date.today, share)
+          ::DiscourseCoinEngine.credit_score(user.id, Date.today, payout)
           ::DiscourseCoinEngine.refresh_user_score(user.id)
 
           # Mark invitation responded + won
           invite.update!(responded_at: Time.now, won: true)
 
           # If all winner slots are filled, close the bounty
-          if row['claims_count'].to_i >= row['max_winners'].to_i
+          if closing
             bounty.update!(status: 'awarded', winner_user_id: user.id, winning_post_id: post&.id, awarded_at: Time.now)
           end
 
@@ -163,10 +179,10 @@ module DiscourseCoinEngine
 
         # Notify outside the transaction (no rollback risk on PM failure)
         if granted
-          notify_winner(bounty, user, share, post)
+          notify_winner(bounty, user, payout, post)
           notify_other_invitees_of_close(bounty, winner: user) if bounty.reload.status == 'awarded'
         end
-        { ok: true, granted: true, amount: share, bounty_id: bounty.id }
+        { ok: true, granted: true, amount: payout, bounty_id: bounty.id }
       rescue StandardError => e
         Rails.logger.error("[coin_engine] BountyDispatcher.attempt_claim! failed: #{e.class}: #{e.message}")
         { ok: false, reason: "exception: #{e.message}" }
@@ -191,22 +207,37 @@ module DiscourseCoinEngine
         end
       end
 
+      # v0.33.0 CE-016/CE-017 — safe for BOTH manual and random_reach bounties.
+      #   - Atomic open→expired flip: only the caller that wins the flip pays
+      #     the refund (no double-refund, no refund racing a concurrent award).
+      #   - Refunds only the UNPAID remainder: a random_reach bounty that paid
+      #     out some-but-not-all winner shares used to refund the FULL amount
+      #     on top (minting coins from thin air).
       def refund_and_close!(bounty)
-        amt = bounty.amount.to_i
-        return unless amt > 0
+        refund = 0
         ActiveRecord::Base.transaction do
-          ::DiscourseCoinEngine.credit_score(bounty.poster_user_id, Date.today, amt)
-          ::DiscourseCoinEngine.refresh_user_score(bounty.poster_user_id)
-          bounty.update!(status: 'expired')
+          flipped = ::DiscourseCoinEngine::Bounty
+                      .where(id: bounty.id, status: 'open')
+                      .update_all(status: 'expired', updated_at: Time.now) == 1
+          if flipped
+            paid = ::DiscourseCoinEngine::BountyClaim.where(bounty_id: bounty.id).sum(:awarded_amount).to_i
+            refund = [bounty.amount.to_i - paid, 0].max
+            if refund > 0
+              ::DiscourseCoinEngine.credit_score(bounty.poster_user_id, Date.today, refund)
+              ::DiscourseCoinEngine.refresh_user_score(bounty.poster_user_id)
+            end
+          end
         end
+        bounty.reload
+        return unless refund > 0
         # Notify poster
         begin
           ::DiscourseCoinEngine::Notifier.credit!(
             recipient: ::User.find(bounty.poster_user_id),
-            amount: amt,
+            amount: refund,
             reason: 'bounty_refund',
             sender: nil,
-            note: "Your bounty expired with no winners — refund issued.",
+            note: "Your bounty expired — unclaimed #{refund} refunded.",
             ref: { type: 'bounty', id: bounty.id }
           )
         rescue StandardError => e

@@ -49,7 +49,7 @@ module DiscourseCoinEngine
           amount: b.amount.to_i,
           sender:    poster ? { username: poster.username, name: poster.name } : nil,
           recipient: winner ? { username: winner.username, name: winner.name } : nil,
-          note: b.title.to_s.presence,
+          note: b.topic&.title.to_s.presence, # CE-015: Bounty has no title column
           post_id: b.winning_post_id,
         }
       end
@@ -210,7 +210,7 @@ module DiscourseCoinEngine
         id: b.id,
         ts: (b.awarded_at || b.created_at).to_i,
         amount: b.amount.to_i,
-        title: b.title.to_s,
+        title: b.topic&.title.to_s, # CE-015: Bounty has no title column
         poster: poster ? { username: poster.username, name: poster.name } : nil,
         winner: winner ? { username: winner.username, name: winner.name } : nil,
         winning_post_id: b.winning_post_id,

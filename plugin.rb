@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.31.1
+# version: 0.33.0
 # authors: LF Builders
 # required_version: 3.2.0
 
@@ -356,6 +356,8 @@ after_initialize do
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_spotlight_rotation.rb', __FILE__)
   # v0.24.0 — squad leaderboard score aggregation
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_refresh_squad_scores.rb', __FILE__)
+  # v0.33.0 CE-017 — hourly refund sweep for expired-but-open bounties
+  load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_refund_expired_bounties.rb', __FILE__)
 
   load File.expand_path('../app/mailers/discourse_coin_engine_mailer.rb', __FILE__)
 

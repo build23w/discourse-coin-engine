@@ -200,16 +200,32 @@ module DiscourseCoinEngine
       return render_json_error('bounty not found', status: 404) unless bounty
       return render_json_error('only the poster can award', status: 403) unless bounty.poster_user_id == current_user.id
       return render_json_error('bounty is not open', status: 422) unless bounty.open?
+      # v0.33.0 CE-016 — expired bounties belong to the refund sweep, not award
+      # (blocks the award/refund double-spend race around the hourly job).
+      return render_json_error('bounty has expired', status: 422) if bounty.expired?
       post = ::Post.find_by(id: params[:winning_post_id])
       return render_json_error('post not found', status: 404) unless post
+      # v0.33.0 CE-019 — winning post must live on the bounty topic; poster
+      # cannot award their own post (self-refund loophole).
+      return render_json_error('post is not on the bounty topic', status: 422) unless post.topic_id == bounty.topic_id
+      return render_json_error('cannot award your own post', status: 422) if post.user_id == current_user.id
       winner = ::User.find_by(id: post.user_id)
       return render_json_error('winner not found', status: 404) unless winner
 
+      flipped = false
       ActiveRecord::Base.transaction do
-        ::DiscourseCoinEngine.credit_score(winner.id, Date.today, bounty.amount)
-        bounty.update!(status: 'awarded', winner_user_id: winner.id, winning_post_id: post.id, awarded_at: Time.now)
-        ::DiscourseCoinEngine.refresh_user_score(winner.id)
+        # v0.33.0 CE-016 — atomic open→awarded flip: only the caller that wins
+        # the flip pays out, so concurrent award/refund can never double-spend.
+        flipped = Bounty.where(id: bounty.id, status: 'open').update_all(
+          status: 'awarded', winner_user_id: winner.id, winning_post_id: post.id,
+          awarded_at: Time.now, updated_at: Time.now
+        ) == 1
+        if flipped
+          ::DiscourseCoinEngine.credit_score(winner.id, Date.today, bounty.amount)
+          ::DiscourseCoinEngine.refresh_user_score(winner.id)
+        end
       end
+      return render_json_error('bounty is not open', status: 422) unless flipped
 
       # v0.8.4 — push + PM the winner.
       begin
@@ -230,7 +246,8 @@ module DiscourseCoinEngine
 
     # GET /coin-engine/economy/bounties.json
     def list_bounties
-      open_b = Bounty.open.order(created_at: :desc).limit(50)
+      # v0.33.0 CE-016 — don't advertise expired-but-unswept bounties as open.
+      open_b = Bounty.open.where('expires_at IS NULL OR expires_at > ?', Time.now).order(created_at: :desc).limit(50)
       render json: { bounties: open_b.map { |b| serialize_bounty(b) } }
     end
 
