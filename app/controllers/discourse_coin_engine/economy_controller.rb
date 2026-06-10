@@ -218,7 +218,7 @@ module DiscourseCoinEngine
           amount:    bounty.amount,
           reason:    'bounty_award',
           sender:    current_user,
-          note:      bounty.title.to_s[0, 280].presence,
+          note:      bounty.topic&.title.to_s[0, 280].presence, # CE-015: Bounty has no title column; topic title is the human label (was NoMethodError, killed winner notify)
           ref:       { type: 'bounty', id: bounty.id, post_id: post.id },
         )
       rescue StandardError => e
