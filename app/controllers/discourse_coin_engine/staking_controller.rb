@@ -174,6 +174,13 @@ module DiscourseCoinEngine
       Rails.logger.error("[coin_engine.staking] DM admins failed: #{e.message}")
     end
 
+    # v0.31.3 — CE-009: these two actions were appended BELOW the `private`
+    # keyword at line ~132, so Rails treated them as private methods, not
+    # actions → every GET pending_payouts.json / POST claim_payout.json
+    # returned 404 (AbstractController::ActionNotFound). The stake-yield
+    # payout feature was never reachable. `public` restores action visibility.
+    public
+
     # v0.21.0 — GET /coin-engine/staking/pending_payouts.json
     # Returns the current user's unclaimed stake-yield payouts, newest first.
     # Each row carries the period label, snapshot stake size, payout amount,
