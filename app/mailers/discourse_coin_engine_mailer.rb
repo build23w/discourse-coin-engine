@@ -1,6 +1,13 @@
 # frozen_string_literal: true
 
 class DiscourseCoinEngineMailer < ::ActionMailer::Base
+  # 2026-06-10 (CE-005): self-register the plugin's app/views so mailer templates
+  # resolve. ActionMailer::Base keeps its OWN view_paths; the previous plugin.rb
+  # registration ran BEFORE this file was loaded (plugin.rb load-order) and died
+  # with NameError every boot, leaving all mailers MissingTemplate. Registering
+  # here, inside the class body, removes the ordering dependency entirely.
+  prepend_view_path File.expand_path('../../views', __FILE__)
+
   default from: -> { SiteSetting.notification_email }
   layout 'email_template'
 

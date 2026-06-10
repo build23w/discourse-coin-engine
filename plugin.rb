@@ -273,11 +273,11 @@ after_initialize do
   # disk. Same fix as AdminPaymentsController above; this was the real cause of
   # the daily_top_picks MissingTemplate flood (QA-004). Rescue so a load-order
   # hiccup can't break plugin boot.
-  begin
-    DiscourseCoinEngineMailer.prepend_view_path(File.expand_path('../app/views', __FILE__))
-  rescue => e
-    Rails.logger.warn("[coin_engine] mailer view_path registration failed: #{e.class}: #{e.message}")
-  end
+  # CE-005 (2026-06-10): the registration that used to live here ran BEFORE the
+  # mailer file is loaded (see the `load .../app/mailers/...` line further down),
+  # so it raised NameError on every boot and the rescue swallowed it -- mailers
+  # stayed MissingTemplate. The mailer class now registers its own view path in
+  # app/mailers/discourse_coin_engine_mailer.rb (no load-order dependency).
   # v0.6.9: Discourse 2026 dropped the server-rendered admin layout. Use no_ember instead.
   DiscourseCoinEngine::AdminPaymentsController.layout false if defined?(DiscourseCoinEngine::AdminPaymentsController)
   load File.expand_path('../app/controllers/discourse_coin_engine/embed_controller.rb', __FILE__)
