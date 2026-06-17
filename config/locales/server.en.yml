@@ -14,6 +14,7 @@ en:
     coin_engine_solana_field_id: "Discourse user_field ID for the Solana wallet address."
     coin_engine_max_earn_per_hour: "Anti-abuse cap on coins earnable per user per hour. 0 disables the cap."
     coin_engine_emails_enabled: "Master switch for ALL coin engine email jobs. Must be true for any individual digest to send."
+    coin_engine_email_sender_name: "Display name shown as the sender on all coin engine emails (the 'friendly from'). Leave blank to default to the Site Contact Username (site_contact_username), then the site title. Set this to stop digests showing the bare email local-part as the sender."
     coin_engine_weekly_digest_enabled: "Send weekly leaderboard digest emails Mondays."
     coin_engine_weekly_digest_top_n: "How many top users to include in the leaderboard digest."
     coin_engine_personal_recap_enabled: "Send each user a personal weekly recap of their earnings, rank delta, and new badges."

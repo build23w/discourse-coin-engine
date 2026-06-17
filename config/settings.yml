@@ -49,6 +49,13 @@ plugins:
   coin_engine_emails_enabled:
     default: false
 
+  # ===== Sender identity =====
+  # Display name ("friendly from") for every coin-engine email. When blank,
+  # falls back to the Site Contact Username (then site title), so the digest
+  # never shows the bare local-part of notification_email.
+  coin_engine_email_sender_name:
+    default: ""
+
   # ===== Weekly leaderboard digest =====
   coin_engine_weekly_digest_enabled:
     default: false

@@ -16,8 +16,47 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
   # (undefined method 'email_html_template') ×48 @16:01Z.
   helper :application, :email
 
-  default from: -> { SiteSetting.notification_email }
+  # 2026-06-17: give the digest a friendly "From" display name. Previously this
+  # was the bare `notification_email`, so mail clients fell back to showing the
+  # local-part (the "@ name") of the sender. We now emit `"Display Name" <addr>`.
+  # The display name resolves (first non-blank wins):
+  #   1. coin_engine_email_sender_name  (admin override, Settings page)
+  #   2. the Site Contact Username (site_contact_username, e.g. "BuildersLTD")
+  #   3. the site title
+  default from: -> { DiscourseCoinEngineMailer.default_from }
   layout 'email_template'
+
+  # Build the RFC-5322 From with a display name. Falls back to the bare address
+  # if anything goes wrong so a mailer never dies on a malformed sender.
+  def self.default_from
+    email = SiteSetting.notification_email
+    name  = sender_display_name
+    return email if name.blank?
+
+    address = Mail::Address.new(email.to_s)
+    address.display_name = name
+    address.format
+  rescue StandardError
+    SiteSetting.notification_email
+  end
+
+  # Resolve the sender display name with the documented fallback chain.
+  def self.sender_display_name
+    override = SiteSetting.coin_engine_email_sender_name.to_s.strip
+    return override if override.present?
+
+    username = SiteSetting.site_contact_username.to_s.strip
+    if username.present?
+      # Use the contact's username (canonical casing via lookup; raw value as
+      # a fallback if the user can't be resolved).
+      contact = User.find_by(username_lower: username.downcase)
+      return (contact&.username.presence || username)
+    end
+
+    SiteSetting.title.presence
+  rescue StandardError
+    nil
+  end
 
   def weekly_digest(user:, top:, my_rank:, rank_delta:)
     @user        = user
