@@ -92,6 +92,21 @@ plugins:
   coin_engine_daily_top_picks_enabled:
     default: false
 
+  # ===== v0.34.0: Own the inbox =====
+  # When true (with coin_engine_enabled + coin_engine_emails_enabled), core
+  # Discourse activity-summary digest emails are suppressed entirely so ALL
+  # engagement email flows through coin-engine jobs (EmailThrottle-capped).
+  coin_engine_disable_core_digests:
+    default: true
+
+  # ===== v0.34.0: Geo-scoped digests =====
+  coin_engine_geo_digest_enabled:
+    default: true
+  coin_engine_geo_digest_window_days:
+    default: 7
+    min: 1
+    max: 60
+
   # ===== Webhook (outbound) =====
   coin_engine_webhook_url:
     default: ""

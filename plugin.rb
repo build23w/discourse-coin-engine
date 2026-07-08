@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.33.0
+# version: 0.34.0
 # authors: LF Builders
 # required_version: 3.2.0
 
@@ -347,7 +347,48 @@ after_initialize do
   # regardless of what we pass here -- our routes below use that prefix to match.
   add_admin_route 'coin_engine.title', 'discourse-coin-engine', use_new_show_route: true
 
+  load File.expand_path('../lib/discourse_coin_engine/geo_digest.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_weekly_digest.rb', __FILE__)
+
+  # ===== v0.34.0: Own the inbox - core digest suppression =====
+  # When the coin-engine email system is active, Discourse's built-in
+  # activity-summary ("digest") emails are suppressed so ALL engagement email
+  # flows through coin-engine jobs - one voice, EmailThrottle-capped,
+  # geo-scoped. Both the scheduled enqueuer AND the mailer method are gated so
+  # nothing slips through a manually-enqueued Jobs::UserEmail. Flipping
+  # coin_engine_disable_core_digests (or the email master switch) off restores
+  # core digests instantly - no rebuild needed.
+  module ::DiscourseCoinEngine::CoreDigestSuppression
+    def self.active?
+      SiteSetting.coin_engine_enabled &&
+        SiteSetting.coin_engine_emails_enabled &&
+        SiteSetting.coin_engine_disable_core_digests
+    rescue StandardError
+      false
+    end
+  end
+
+  if defined?(::Jobs::EnqueueDigestEmails)
+    module ::DiscourseCoinEngine::EnqueueDigestGate
+      def execute(args)
+        return if ::DiscourseCoinEngine::CoreDigestSuppression.active?
+        super
+      end
+    end
+    ::Jobs::EnqueueDigestEmails.prepend(::DiscourseCoinEngine::EnqueueDigestGate)
+  end
+
+  if defined?(::UserNotifications)
+    module ::DiscourseCoinEngine::UserNotificationsDigestGate
+      def digest(user, opts = {})
+        # Returning without calling mail() yields an ActionMailer NullMail -
+        # the same no-send path core uses when a digest has no content.
+        return if ::DiscourseCoinEngine::CoreDigestSuppression.active?
+        super
+      end
+    end
+    ::UserNotifications.prepend(::DiscourseCoinEngine::UserNotificationsDigestGate)
+  end
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_personal_recap.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_streak_warning.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_dormant_reengage.rb', __FILE__)

@@ -47,7 +47,7 @@
   <tr>
     <td style="padding:24px 0 14px;">
       <div style="display:inline-block;padding:4px 12px;background:<%= @brand_color %>;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:1.4px;border-radius:999px;">TODAY</div>
-      <h1 style="margin:14px 0 6px;font-size:24px;font-weight:900;letter-spacing:-.3px;line-height:1.2;">Hottest threads on <%= @site_name %></h1>
+      <h1 style="margin:14px 0 6px;font-size:24px;font-weight:900;letter-spacing:-.3px;line-height:1.2;"><% if @geo_label.present? %>Hottest threads near <%= @geo_label %><% else %>Hottest threads on <%= @site_name %><% end %></h1>
       <p style="margin:0;color:#5a6573;font-size:13.5px;line-height:1.5;">Five conversations gaining real heat right now &mdash; jump in early and the <%= @coin_name %> per reply scales with engagement.</p>
     </td>
   </tr>

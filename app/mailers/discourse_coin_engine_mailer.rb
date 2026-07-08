@@ -97,15 +97,21 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
     mail to: user.email, subject: I18n.t('discourse_coin_engine.streak_warning.subject', days: streak_days)
   end
 
-  def dormant_reengage(user:, top_topics:)
+  def dormant_reengage(user:, top_topics:, geo_label: nil)
     @user        = user
     @top_topics  = top_topics
+    @geo_label   = geo_label
     @coin_name   = SiteSetting.coin_engine_coin_name
     @site_name   = SiteSetting.title
     @site_url    = Discourse.base_url
     @brand_color = SiteSetting.coin_engine_brand_color
 
-    mail to: user.email, subject: I18n.t('discourse_coin_engine.dormant_reengage.subject', site_name: @site_name)
+    subject = if @geo_label.present?
+      "What you missed near #{@geo_label} on #{@site_name}"
+    else
+      I18n.t('discourse_coin_engine.dormant_reengage.subject', site_name: @site_name)
+    end
+    mail to: user.email, subject: subject
   end
 
   def airdrop_notification(user:, amount:, reason:)
@@ -137,16 +143,21 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
          subject: I18n.t('discourse_coin_engine.manual_payment.subject', amount: amount, coin: @coin_name, payment_id: payment_id)
   end
 
-  def daily_top_picks(user:, top_topics:)
+  def daily_top_picks(user:, top_topics:, geo_label: nil)
     @user        = user
     @top_topics  = top_topics
+    @geo_label   = geo_label
     @coin_name   = SiteSetting.coin_engine_coin_name
     @site_name   = SiteSetting.title
     @site_url    = Discourse.base_url
     @brand_color = SiteSetting.coin_engine_brand_color
 
-    mail to: user.email,
-         subject: "Today on #{@site_name}: 5 conversations you'll want in on"
+    subject = if @geo_label.present?
+      "Today near #{@geo_label}: local conversations you'll want in on"
+    else
+      "Today on #{@site_name}: 5 conversations you'll want in on"
+    end
+    mail to: user.email, subject: subject
   end
 
   def tier_up(user:, tier_name:)
