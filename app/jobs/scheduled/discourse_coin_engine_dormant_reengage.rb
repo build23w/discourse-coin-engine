@@ -54,9 +54,11 @@ module Jobs
           next if rows.blank?
 
           DiscourseCoinEngineMailer.dormant_reengage(
-            user: user, top_topics: rows, geo_label: geo_label
+            user: user, top_topics: rows, geo_label: geo_label,
+            local_weekly_path: ::DiscourseCoinEngine::GeoDigest.local_weekly_path(user)
           ).deliver_later
           ::DiscourseCoinEngine::EmailThrottle.mark_sent!(user.id)
+          ::DiscourseCoinEngine::EmailStats.record_send!(campaign: 'dormant', city: geo_label)
         rescue StandardError => e
           Rails.logger.warn "[coin-engine] dormant reengage failed for #{user.username}: #{e.message}"
         end

@@ -58,6 +58,24 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
     nil
   end
 
+  # ===== v0.35.0: click-reward link wrapping =====
+  # Wrap a same-site path in a signed tracking/reward link. Views call
+  # tracked('/t/slug/123'); campaign + geo context come from ivars set by
+  # each mailer action. Falls back to a plain URL on any failure.
+  def tracked(dest)
+    if SiteSetting.coin_engine_email_click_reward_enabled && @user
+      tok = ::DiscourseCoinEngine::EmailToken.generate(
+        user_id: @user.id, dest: dest, campaign: @campaign.to_s.presence || 'email', city: @geo_label
+      )
+      "#{@site_url}/coin-engine/email/visit?tok=#{tok}"
+    else
+      "#{@site_url}#{dest}"
+    end
+  rescue StandardError
+    "#{@site_url}#{dest}"
+  end
+  helper_method :tracked
+
   def weekly_digest(user:, top:, my_rank:, rank_delta:)
     @user        = user
     @top         = top
@@ -89,18 +107,31 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
   def streak_warning(user:, streak_days:)
     @user        = user
     @streak_days = streak_days
+    @campaign    = 'streak'
     @coin_name   = SiteSetting.coin_engine_coin_name
     @site_name   = SiteSetting.title
     @site_url    = Discourse.base_url
     @brand_color = SiteSetting.coin_engine_brand_color
 
+    if SiteSetting.coin_engine_streak_freeze_email_cta_enabled
+      begin
+        tok = ::DiscourseCoinEngine::EmailToken.generate(user_id: user.id, dest: '/', campaign: 'streak', action: 'freeze')
+        @freeze_href = "#{@site_url}/coin-engine/email/visit?tok=#{tok}"
+        @freeze_cost = SiteSetting.coin_engine_streak_freeze_cost.to_i
+      rescue StandardError
+        @freeze_href = nil
+      end
+    end
+
     mail to: user.email, subject: I18n.t('discourse_coin_engine.streak_warning.subject', days: streak_days)
   end
 
-  def dormant_reengage(user:, top_topics:, geo_label: nil)
+  def dormant_reengage(user:, top_topics:, geo_label: nil, local_weekly_path: nil)
     @user        = user
     @top_topics  = top_topics
     @geo_label   = geo_label
+    @campaign    = 'dormant'
+    @local_weekly_path = local_weekly_path
     @coin_name   = SiteSetting.coin_engine_coin_name
     @site_name   = SiteSetting.title
     @site_url    = Discourse.base_url
@@ -143,10 +174,12 @@ class DiscourseCoinEngineMailer < ::ActionMailer::Base
          subject: I18n.t('discourse_coin_engine.manual_payment.subject', amount: amount, coin: @coin_name, payment_id: payment_id)
   end
 
-  def daily_top_picks(user:, top_topics:, geo_label: nil)
+  def daily_top_picks(user:, top_topics:, geo_label: nil, local_weekly_path: nil)
     @user        = user
     @top_topics  = top_topics
     @geo_label   = geo_label
+    @campaign    = 'daily'
+    @local_weekly_path = local_weekly_path
     @coin_name   = SiteSetting.coin_engine_coin_name
     @site_name   = SiteSetting.title
     @site_url    = Discourse.base_url

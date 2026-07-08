@@ -107,6 +107,46 @@ plugins:
     min: 1
     max: 60
 
+  # ===== v0.35.0: Email click rewards + per-city funnel stats =====
+  coin_engine_email_click_reward_enabled:
+    default: true
+  coin_engine_email_click_reward:
+    default: 5
+    min: 0
+    max: 500
+
+  # ===== v0.35.0: Local Weekly roundup topics =====
+  coin_engine_local_weekly_enabled:
+    default: true
+  coin_engine_local_weekly_min_users:
+    default: 5
+    min: 1
+    max: 1000
+  coin_engine_local_weekly_max_cities:
+    default: 10
+    min: 1
+    max: 50
+  coin_engine_local_weekly_category_id:
+    default: 0
+    min: 0
+  coin_engine_local_weekly_username:
+    default: ""
+
+  # ===== v0.35.0: Local welcome PM =====
+  coin_engine_local_welcome_enabled:
+    default: true
+  coin_engine_local_welcome_daily_cap:
+    default: 50
+    min: 1
+    max: 200
+
+  # ===== v0.35.0: Location quest + streak-freeze email CTA =====
+  coin_engine_location_quest_enabled:
+    default: true
+    client: true
+  coin_engine_streak_freeze_email_cta_enabled:
+    default: true
+
   # ===== Webhook (outbound) =====
   coin_engine_webhook_url:
     default: ""

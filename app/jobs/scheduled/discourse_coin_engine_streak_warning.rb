@@ -33,6 +33,7 @@ module Jobs
           streak = calc.current
           next if streak < min_days
           DiscourseCoinEngineMailer.streak_warning(user: user, streak_days: streak).deliver_later
+          ::DiscourseCoinEngine::EmailStats.record_send!(campaign: 'streak')
         rescue StandardError => e
           Rails.logger.warn "[coin-engine] streak warning failed for #{user.username}: #{e.message}"
         end

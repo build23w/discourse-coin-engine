@@ -55,7 +55,10 @@
   </tr>
   <tr>
     <td style="padding:24px 0 8px;text-align:center;">
-      <a href="<%= @site_url %>/" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:8px;font-size:15px;">Visit now &rarr;</a>
+      <a href="<%= tracked('/') %>" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:8px;font-size:15px;">Visit now &rarr;</a>
+      <% if @freeze_href.present? %>
+      <div style="margin-top:12px;"><a href="<%= @freeze_href %>" style="display:inline-block;background:#fff;border:2px solid <%= @brand_color %>;color:<%= @brand_color %>;text-decoration:none;font-weight:700;padding:11px 24px;border-radius:8px;font-size:13.5px;">Can't make it today? Freeze your streak for <%= @freeze_cost %> <%= @coin_name %> &rarr;</a></div>
+      <% end %>
     </td>
   </tr>
   <tr>

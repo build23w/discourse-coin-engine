@@ -2,7 +2,7 @@
 
 # name: discourse-coin-engine
 # about: Full-stack community-coin gamification engine. Tips, shop, bounties, stakes, squads, mentorships, achievements, tournaments, AMA bookings, DAO votes, verified pros, daily chests, streak freezes, auctions, random airdrops, spotlight rotation, plus the v0.5.x: embeddable tier badges, public showcase profiles, personal insights, themed weeks. Defaults to "$RENO" for home.renovation.reviews; configurable to any community currency.
-# version: 0.34.0
+# version: 0.35.0
 # authors: LF Builders
 # required_version: 3.2.0
 
@@ -348,6 +348,12 @@ after_initialize do
   add_admin_route 'coin_engine.title', 'discourse-coin-engine', use_new_show_route: true
 
   load File.expand_path('../lib/discourse_coin_engine/geo_digest.rb', __FILE__)
+  load File.expand_path('../lib/discourse_coin_engine/email_token.rb', __FILE__)
+  load File.expand_path('../lib/discourse_coin_engine/email_stats.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/email_controller.rb', __FILE__)
+  load File.expand_path('../app/controllers/discourse_coin_engine/admin_email_stats_controller.rb', __FILE__)
+  load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_local_weekly.rb', __FILE__)
+  load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_local_welcome.rb', __FILE__)
   load File.expand_path('../app/jobs/scheduled/discourse_coin_engine_weekly_digest.rb', __FILE__)
 
   # ===== v0.34.0: Own the inbox - core digest suppression =====
@@ -488,6 +494,8 @@ after_initialize do
     get  '/coin-engine/payments.json'                    => 'discourse_coin_engine/payments#index'
     get  '/coin-engine/user/:username/recap.json'        => 'discourse_coin_engine/user_recap#show', constraints: { username: username_re }
     get  '/coin-engine/user/:username/streak.json'       => 'discourse_coin_engine/streak#show',     constraints: { username: username_re }
+    get  '/coin-engine/email/visit'            => 'discourse_coin_engine/email#visit'
+    get  '/admin/coin-engine/email_stats.json' => 'discourse_coin_engine/admin_email_stats#index'
     post '/coin-engine/admin/airdrop.json'               => 'discourse_coin_engine/admin_airdrop#create'
     # v0.20.0 — Admin airdrop ledger (paginated + username search)
     get  '/coin-engine/admin/airdrops.json'              => 'discourse_coin_engine/admin_airdrop#list'

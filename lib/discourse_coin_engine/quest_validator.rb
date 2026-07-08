@@ -98,6 +98,10 @@ module DiscourseCoinEngine
           return stats['posts_read_count'].to_i >= 10 ? ok('onboarding', 25, 50) : invalid('< 10 posts read')
         when 'first_day_visited'
           return stats['days_visited'].to_i >= 1 ? ok('onboarding', 10, 25) : invalid('no days visited')
+        when 'set_location'
+          # v0.35.0 - location capture quest (feeds geo digests + local feed)
+          loc = (user.user_profile&.location || '').to_s.strip
+          return loc.length >= 3 ? ok('onboarding', 50, 50) : invalid('no location set')
         end
 
         # 7. v0.20.0 Path A — Charity samm_* quests use client-only localStorage

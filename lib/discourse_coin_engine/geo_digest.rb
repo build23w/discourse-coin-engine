@@ -80,6 +80,27 @@ module ::DiscourseCoinEngine
         nil
       end
 
+      # Public location-keyed variant (Local Weekly engine, welcome PMs).
+      def topics_for_location(location, limit:, since:)
+        return [] if location.blank?
+        compute(location, limit: limit, since: since)
+      rescue StandardError
+        []
+      end
+
+      # Fresh (<= 8 days) Local Weekly roundup path for the user's city, or nil.
+      def local_weekly_path(user)
+        city = label_for(user)
+        return nil if city.blank?
+        rec = ::PluginStore.get('discourse-coin-engine', "local_weekly_#{city.downcase.parameterize}")
+        return nil unless rec && rec['topic_id']
+        at = (Time.parse(rec['at'].to_s) rescue nil)
+        return nil if at.nil? || at < 8.days.ago
+        "/t/#{rec['topic_id']}"
+      rescue StandardError
+        nil
+      end
+
       private
 
       def compute(location, limit:, since:)

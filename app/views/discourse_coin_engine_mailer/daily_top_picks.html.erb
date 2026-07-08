@@ -58,7 +58,7 @@
         <% id, title, slug, views, posts_count, like_count = row %>
         <% est = (views.to_i + 5*like_count.to_i + 10*posts_count.to_i) %>
         <% tier = est >= 2000 ? '&#128293;' : (est >= 500 ? '&#11088;' : '&#9999;') %>
-        <a href="<%= @site_url %>/t/<%= slug %>/<%= id %>" style="display:block;padding:14px 16px;border:1px solid #eef1f6;border-left:3px solid <%= @brand_color %>;border-radius:10px;margin-bottom:8px;text-decoration:none;color:#1a2332;">
+        <a href="<%= tracked("/t/#{slug}/#{id}") %>" style="display:block;padding:14px 16px;border:1px solid #eef1f6;border-left:3px solid <%= @brand_color %>;border-radius:10px;margin-bottom:8px;text-decoration:none;color:#1a2332;">
           <div style="font-size:14.5px;font-weight:700;line-height:1.35;margin-bottom:4px;"><%= raw tier %> <%= title %></div>
           <div style="font-size:11.5px;color:#8b95a3;letter-spacing:.2px;">
             <%= number_with_delimiter(views.to_i) %> views &middot;
@@ -72,7 +72,7 @@
 
   <tr>
     <td style="padding:18px 0 0;text-align:center;">
-      <a href="<%= @site_url %>/" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:8px;font-size:14.5px;">Open the feed &rarr;</a>
+      <% if @local_weekly_path.present? %><a href="<%= tracked(@local_weekly_path) %>" style="display:inline-block;background:#fff;border:2px solid <%= @brand_color %>;color:<%= @brand_color %>;text-decoration:none;font-weight:700;padding:11px 24px;border-radius:8px;font-size:14px;margin-right:10px;">Your area this week &rarr;</a><% end %><a href="<%= tracked('/') %>" style="display:inline-block;background:<%= @brand_color %>;color:#fff;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:8px;font-size:14.5px;">Open the feed &rarr;</a>
     </td>
   </tr>
 
