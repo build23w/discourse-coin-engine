@@ -147,6 +147,30 @@ plugins:
   coin_engine_streak_freeze_email_cta_enabled:
     default: true
 
+  # ===== v0.36.0: Stake2Earn on-chain bridge =====
+  coin_engine_stake2earn_enabled:
+    default: true
+    client: true
+  coin_engine_m3m3_program_id:
+    default: "FEESngU3neckdwib9X3KWqdL7Mjmqk9XNp3uh5JbP4KP"
+  coin_engine_m3m3_vault:
+    default: "6esQowpCsyPSJqixnudjAV7NnGAnAGdRQv8pQJr37gEt"
+  coin_engine_m3m3_api_base:
+    default: "https://stake-for-fee-api.meteora.ag"
+  coin_engine_meteora_stake_url:
+    default: ""
+    client: true
+  coin_engine_solana_archive_rpc_url:
+    default: "https://api.mainnet-beta.solana.com"
+  coin_engine_staker_boost_enabled:
+    default: true
+  coin_engine_staker_boost_multiplier:
+    default: 1.5
+  coin_engine_staker_boost_daily_cap:
+    default: 2000
+    min: 0
+    max: 100000
+
   # ===== Webhook (outbound) =====
   coin_engine_webhook_url:
     default: ""

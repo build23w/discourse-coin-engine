@@ -104,6 +104,19 @@ module DiscourseCoinEngine
           return loc.length >= 3 ? ok('onboarding', 50, 50) : invalid('no location set')
         end
 
+        # v0.36.0 - diamond hands: continuous on-chain M3M3 stake duration.
+        # first_seen comes from the staker-sync continuity ledger; unstaking
+        # (or dropping off the top list) resets it.
+        if (m = quest_id.match(/\Adh_stake_(30|90|180)\z/))
+          days = m[1].to_i
+          info = ::DiscourseCoinEngine::Stake2Earn.staker_info_for_user(user)
+          return invalid('not currently staking on-chain') unless info
+          return invalid('no stake history yet') unless info[:first_seen]
+          held = ((Time.now - info[:first_seen]) / 86_400).floor
+          return invalid("staked #{held}d < #{days}d") if held < days
+          return ok('diamond', days * 20, days * 100)
+        end
+
         # 7. v0.20.0 Path A — Charity samm_* quests use client-only localStorage
         # flags (samm_visit, samm_cheer, samm_donate, samm_share, samm_dayone).
         # Server has no source of truth for these, so they are trophy-only on
