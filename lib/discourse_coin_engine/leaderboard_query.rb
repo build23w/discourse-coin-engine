@@ -47,6 +47,7 @@ module DiscourseCoinEngine
           AND u.active = TRUE
           AND u.silenced_till IS NULL
           AND u.suspended_till IS NULL
+          AND u.trust_level >= 1
           #{filter}
         GROUP BY u.id, u.username, u.name, u.uploaded_avatar_id
         HAVING SUM(gs.score) > 0
