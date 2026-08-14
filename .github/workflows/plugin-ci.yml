@@ -1,0 +1,34 @@
+# Syntax gate for this Discourse plugin. The forum (home.renovation.reviews) clones
+# this repo fresh on every container boot, so a file that does not parse would take
+# the whole forum down on its next restart. This is the minimum bar: everything must
+# at least parse. Merges go live automatically at the forum's nightly recycle, or
+# immediately via the recycle-forum workflow in gary23w/hrr-infra.
+name: plugin ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ruby files must parse
+        run: |
+          set -e
+          for f in $(git ls-files '*.rb'); do ruby -c "$f" >/dev/null; done
+          echo "all ruby files parse"
+      - name: YAML files must load
+        run: |
+          set -e
+          for f in $(git ls-files 'config/*.yml' 'config/**/*.yml'); do
+            ruby -ryaml -e "YAML.unsafe_load_file('$f')" >/dev/null
+          done
+          echo "all yaml files load"
+      - name: JS files must parse (if any)
+        run: |
+          for f in $(git ls-files '*.js' | grep -v vendor | head -50); do
+            node --check "$f" || exit 1
+          done
+          echo "js ok"
