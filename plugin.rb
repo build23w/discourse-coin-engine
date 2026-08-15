@@ -8,6 +8,8 @@
 
 enabled_site_setting :coin_engine_enabled
 
+register_asset "stylesheets/coin-engine-overrides.scss"
+
 # v0.6.6: a single cache-refresh helper that busts BOTH our coin_engine_score
 # serializer cache AND the discourse-gamification leaderboard materialized view.
 # Without the materialized-view refresh, the recipient's profile total stays

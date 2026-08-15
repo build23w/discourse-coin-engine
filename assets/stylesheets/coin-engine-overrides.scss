@@ -1,0 +1,24 @@
+// Brand-color overrides for the chest/quest surfaces. The gradients these replace
+// live in DB theme components; plugin CSS loads before theme CSS, so each rule
+// carries !important to take the final word without touching any theme field.
+
+// "Daily chest" pill and the chest splash card: solid brand color, no orange ramp
+.lf-ux-chest-pill,
+.lf-ux-splash__card--chest {
+  background: var(--tertiary) !important;
+}
+
+// The $RENO FAB inside the mobile bottom nav kept its expanded 180px pill width
+// with the label hidden, stretching across the nav slots — force it round
+html.lf-bn-on .lf-ux-quest__fab,
+html.lf-bn-on .lf-ux-quest__fab--expanded {
+  width: 60px !important;
+  height: 60px !important;
+  animation: none !important;
+}
+
+// On first landing the FAB sat on top of the cookie-consent button; hide it
+// while the banner is visible, it reappears the moment consent is dismissed
+body:has(.cc-window:not(.cc-invisible)) #lf-ux-quest-host {
+  display: none !important;
+}
