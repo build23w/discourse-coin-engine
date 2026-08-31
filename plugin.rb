@@ -300,6 +300,32 @@ after_initialize do
   load File.expand_path('../app/models/discourse_coin_engine/follow.rb', __FILE__)
   load File.expand_path('../app/models/discourse_coin_engine/repost.rb', __FILE__)
   load File.expand_path('../lib/discourse_coin_engine/social_graph.rb', __FILE__)
+
+  # v0.37.0 - tiered digest content supply (stops engagement emails starving)
+  load File.expand_path('../lib/discourse_coin_engine/digest_content.rb', __FILE__)
+
+  # v0.37.0 - edge geolocation from Cloudflare request headers.
+  # The origin sees a proxy IP (10.x), so IP-based geo is unusable here;
+  # Cloudflare resolves location at the edge and passes it in headers.
+  load File.expand_path('../lib/discourse_coin_engine/cloudflare_geo.rb', __FILE__)
+
+  # Guarded: this repo is cloned fresh on every forum boot, so anything that
+  # raises at load time takes the site down. A geo nicety must never do that.
+  begin
+    if defined?(::ApplicationController)
+      ::ApplicationController.class_eval do
+        before_action :coin_engine_capture_cf_geo
+
+        def coin_engine_capture_cf_geo
+          ::DiscourseCoinEngine::CloudflareGeo.capture(current_user, request)
+        rescue StandardError
+          nil # never break a page render over geo capture
+        end
+      end
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[coin-engine] could not install CF geo capture: #{e.class}: #{e.message}")
+  end
   load File.expand_path('../app/controllers/discourse_coin_engine/social_graph_controller.rb', __FILE__)
   load File.expand_path('../app/controllers/discourse_coin_engine/post_votes_controller.rb',  __FILE__)
   # v0.25.0 — user-created squads + shareable squad page

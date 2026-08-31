@@ -99,6 +99,23 @@ plugins:
   coin_engine_disable_core_digests:
     default: true
 
+  # ===== v0.37.0: Cloudflare edge geolocation =====
+  coin_engine_cf_geo_enabled:
+    default: true
+
+  # ===== v0.37.0: Digest content supply =====
+  coin_engine_digest_exclude_category_ids:
+    type: category_list
+    default: ''
+  coin_engine_digest_min_score:
+    default: 40
+    min: 0
+    max: 100000
+  coin_engine_digest_recent_days:
+    default: 30
+    min: 1
+    max: 365
+
   # ===== v0.34.0: Geo-scoped digests =====
   coin_engine_geo_digest_enabled:
     default: true

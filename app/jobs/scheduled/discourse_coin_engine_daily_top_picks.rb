@@ -19,14 +19,14 @@ module Jobs
       return unless SiteSetting.coin_engine_emails_enabled
       return unless SiteSetting.coin_engine_daily_top_picks_enabled
 
-      # Site-wide fallback: top hot-but-not-stale topics of the last 48h
-      top_topics = ::Topic.visible
-                          .listable_topics
-                          .where('topics.bumped_at >= ?', 48.hours.ago)
-                          .where('topics.posts_count > ?', 1)
-                          .order(views: :desc)
-                          .limit(8)
-                          .pluck(:id, :title, :slug, :views, :posts_count, :like_count)
+      # v0.37.0 - tiered supply: hot -> recent -> evergreen. The old query was
+      # "bumped in 48h with a reply", which returns nothing on most days here,
+      # and every recipient was then skipped by `next if rows.blank?`.
+      top_topics = ::DiscourseCoinEngine::DigestContent.site_wide(
+        limit: 8,
+        fresh_hours: 48,
+        recent_days: SiteSetting.coin_engine_digest_recent_days.to_i
+      )
 
       geo_since = SiteSetting.coin_engine_geo_digest_window_days.to_i.clamp(1, 60).days.ago
       geo_cache = {}

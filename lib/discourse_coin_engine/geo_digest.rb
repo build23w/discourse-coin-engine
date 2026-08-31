@@ -28,8 +28,13 @@ module ::DiscourseCoinEngine
         false
       end
 
+      # v0.37.0 - a location the user TYPED always wins. Only when they have
+      # not set one do we fall back to what Cloudflare resolved at the edge,
+      # so geo digests work for the ~all of users who never fill the field in.
       def location_of(user)
-        user&.user_profile&.location.to_s.strip
+        stated = user&.user_profile&.location.to_s.strip
+        return stated if stated.present?
+        ::DiscourseCoinEngine::CloudflareGeo.location_for(user).to_s.strip
       rescue StandardError
         ''
       end

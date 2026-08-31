@@ -18,13 +18,13 @@ module Jobs
       cutoff_recent = threshold.days.ago
       cutoff_floor  = 90.days.ago # don't email truly abandoned accounts
 
-      # Site-wide fallback list
-      top_topics = ::Topic.visible
-                          .listable_topics
-                          .where('topics.created_at >= ? OR topics.bumped_at >= ?', 14.days.ago, 14.days.ago)
-                          .order(views: :desc)
-                          .limit(5)
-                          .pluck(:id, :title, :slug, :views, :posts_count, :like_count)
+      # v0.37.0 - tiered supply: hot -> recent -> evergreen, so a win-back email
+      # is never skipped just because the last 14 days were quiet.
+      top_topics = ::DiscourseCoinEngine::DigestContent.site_wide(
+        limit: 5,
+        fresh_hours: 14 * 24,
+        recent_days: SiteSetting.coin_engine_digest_recent_days.to_i
+      )
 
       geo_cache = {}
 
