@@ -83,6 +83,23 @@ plugins:
     default: 7
     min: 3
     max: 60
+  # v0.38.0 - staged win-back. The far cutoff used to be a hardcoded 90 days.
+  # Raising the floor re-opens users who left long ago, so it is paired with a
+  # per-run cap and a per-user cooldown: the job now runs daily and works the
+  # most recently seen users first, so a wider floor drains in gentle batches
+  # and nobody hears from us more than once per cooldown.
+  coin_engine_dormant_days_floor:
+    default: 90
+    min: 8
+    max: 3650
+  coin_engine_dormant_daily_cap:
+    default: 150
+    min: 1
+    max: 5000
+  coin_engine_dormant_cooldown_days:
+    default: 30
+    min: 1
+    max: 365
 
   # ===== Tier-up real-time email =====
   coin_engine_tier_up_email_enabled:
