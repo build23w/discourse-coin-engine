@@ -96,6 +96,18 @@ module DiscourseCoinEngine
         invite = ::DiscourseCoinEngine::BountyInvitation.find_by(bounty_id: bounty.id, user_id: user.id)
         return { ok: false, reason: 'not_invited' } unless invite
 
+        return { ok: false, reason: 'qualifying_reply_required' } unless post.is_a?(::Post)
+        return { ok: false, reason: 'wrong_author' } unless post.user_id == user.id
+        return { ok: false, reason: 'wrong_topic' } unless post.topic_id == bounty.topic_id
+        return { ok: false, reason: 'not_a_reply' } unless post.post_number.to_i > 1
+        return { ok: false, reason: 'regular_reply_required' } unless post.post_type == ::Post.types[:regular]
+        return { ok: false, reason: 'reply_unavailable' } if post.deleted_at || post.hidden
+        return { ok: false, reason: 'reply_before_invitation' } if post.created_at < invite.invited_at
+        invite_deadline = invite.invited_at + bounty.window_minutes.to_i.minutes
+        return { ok: false, reason: 'invitation_expired' } if post.created_at > invite_deadline
+        return { ok: false, reason: 'bounty_expired' } if bounty.expires_at && post.created_at > bounty.expires_at
+        return { ok: false, reason: 'topic_unavailable' } unless ::Guardian.new(user).can_see?(post.topic)
+
         # Per-user-per-day cap (anti-abuse)
         cap = (SiteSetting.coin_engine_bounty_max_wins_per_day rescue 5).to_i
         recent_wins = ::DiscourseCoinEngine::BountyClaim.where(user_id: user.id).where('claimed_at > ?', 24.hours.ago).count
@@ -103,7 +115,7 @@ module DiscourseCoinEngine
 
         # Quality gate: minimum reply length
         min_len = (SiteSetting.coin_engine_bounty_min_reply_chars rescue 80).to_i
-        if post && post.respond_to?(:raw) && post.raw.to_s.strip.length < min_len
+        if post.raw.to_s.strip.length < min_len
           return { ok: false, reason: 'reply_too_short' }
         end
 
@@ -164,7 +176,6 @@ module DiscourseCoinEngine
 
           # Credit the winner
           ::DiscourseCoinEngine.credit_score(user.id, Date.today, payout)
-          ::DiscourseCoinEngine.refresh_user_score(user.id)
 
           # Mark invitation responded + won
           invite.update!(responded_at: Time.now, won: true)
@@ -179,13 +190,15 @@ module DiscourseCoinEngine
 
         # Notify outside the transaction (no rollback risk on PM failure)
         if granted
+          ::DiscourseCoinEngine.refresh_user_score(user.id)
           notify_winner(bounty, user, payout, post)
           notify_other_invitees_of_close(bounty, winner: user) if bounty.reload.status == 'awarded'
         end
         { ok: true, granted: true, amount: payout, bounty_id: bounty.id }
       rescue StandardError => e
-        Rails.logger.error("[coin_engine] BountyDispatcher.attempt_claim! failed: #{e.class}: #{e.message}")
-        { ok: false, reason: "exception: #{e.message}" }
+        ref = SecureRandom.hex(6)
+        Rails.logger.error("[coin_engine] BountyDispatcher.attempt_claim! ref=#{ref} failed: #{e.class}: #{e.message}")
+        { ok: false, reason: 'claim_failed', reference: ref }
       end
 
       def expire_round!(bounty)
@@ -224,10 +237,10 @@ module DiscourseCoinEngine
             refund = [bounty.amount.to_i - paid, 0].max
             if refund > 0
               ::DiscourseCoinEngine.credit_score(bounty.poster_user_id, Date.today, refund)
-              ::DiscourseCoinEngine.refresh_user_score(bounty.poster_user_id)
             end
           end
         end
+        ::DiscourseCoinEngine.refresh_user_score(bounty.poster_user_id) if refund > 0
         bounty.reload
         return unless refund > 0
         # Notify poster

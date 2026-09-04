@@ -119,8 +119,9 @@ module DiscourseCoinEngine
         events: events,
       }
     rescue StandardError => e
-      Rails.logger.error("[coin_engine] PublicLedger#recent: #{e.class}: #{e.message}")
-      render json: { events: [], error: e.message }, status: 200
+      reference = SecureRandom.hex(12)
+      Rails.logger.error("[coin_engine] ref=#{reference} PublicLedger#recent: #{e.class}: #{e.message}")
+      render json: { events: [], error: "temporarily unavailable", reference: reference }, status: 200
     end
 
     # GET /coin-engine/ledger/tips.json?page=1&limit=20

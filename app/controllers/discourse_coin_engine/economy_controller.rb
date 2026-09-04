@@ -189,7 +189,8 @@ module DiscourseCoinEngine
       RateLimiter.new(current_user, 'ce_bounty_claim', 30, 1.hour).performed!
       bounty = Bounty.find_by(id: params[:id])
       return render_json_error('bounty not found', status: 404) unless bounty
-      result = ::DiscourseCoinEngine::BountyDispatcher.attempt_claim!(bounty, current_user, nil)
+      post = ::Post.find_by(id: params[:post_id])
+      result = ::DiscourseCoinEngine::BountyDispatcher.attempt_claim!(bounty, current_user, post)
       render json: result, status: (result[:ok] ? 200 : 422)
     end
 
@@ -289,22 +290,21 @@ module DiscourseCoinEngine
     # POST /coin-engine/economy/stakes/:id/unstake.json
     def unstake
       RateLimiter.new(current_user, 'ce_unstake', 20, 1.day).performed!
-      stake = Stake.find_by(id: params[:id], user_id: current_user.id)
-      return render_json_error('stake not found', status: 404) unless stake
-      return render_json_error('already unstaked') if stake.status != 'active'
-
-      payout = if stake.matured?
-                 (stake.amount * stake.multiplier).to_i
-               else
-                 stake.amount # early unlock = no bonus
-               end
-
+      stake = nil
+      payout = nil
+      matured = nil
       ActiveRecord::Base.transaction do
+        stake = Stake.lock.find_by(id: params[:id], user_id: current_user.id)
+        return render_json_error('stake not found', status: 404) unless stake
+        return render_json_error('already unstaked') if stake.status != 'active'
+
+        matured = stake.matured?
+        payout = matured ? (stake.amount * stake.multiplier).to_i : stake.amount
+        stake.update!(status: matured ? 'matured' : 'early_unlocked', rewards_paid: payout - stake.amount)
         ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, payout)
-        stake.update!(status: stake.matured? ? 'matured' : 'early_unlocked', rewards_paid: payout - stake.amount)
-        ::DiscourseCoinEngine.refresh_user_score(current_user.id)
       end
-      render json: { id: stake.id, payout: payout, matured: stake.matured? }
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id)
+      render json: { id: stake.id, payout: payout, matured: matured }
     end
 
     # GET /coin-engine/economy/stakes.json

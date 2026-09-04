@@ -28,6 +28,20 @@ module DiscourseCoinEngine
     MAX_RENO_PER_CLAIM = 50_000
     MAX_XP_PER_CLAIM   = 100_000
 
+    STAT_QUESTS = {
+      'reviewer' => ['post_count', [1, 2, 5, 10, 15, 20, 25, 40, 50, 75, 100, 150, 200, 250, 300, 400, 500, 750, 1_000, 1_500, 2_000, 2_500, 5_000, 10_000]],
+      'topiclord' => ['topic_count', [1, 2, 3, 5, 10, 15, 25, 50, 75, 100, 150, 250, 500, 1_000, 2_500]],
+      'helper' => ['likes_given', [1, 5, 10, 25, 50, 75, 100, 150, 250, 500, 750, 1_000, 2_500, 5_000, 10_000, 25_000]],
+      'beloved' => ['likes_received', [1, 5, 10, 25, 50, 75, 100, 150, 250, 500, 750, 1_000, 2_500, 5_000, 10_000, 25_000]],
+      'explorer' => ['days_visited', [1, 2, 3, 7, 14, 21, 30, 45, 60, 90, 120, 180, 270, 365, 500, 730, 1_000, 1_500]],
+      'reader' => ['posts_read_count', [10, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000]],
+      'voyager' => ['topics_entered', [1, 5, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000]],
+    }.freeze
+    TRUST_LEVELS = [1, 2, 3, 4].freeze
+    SCORE_THRESHOLDS = [10, 25, 50, 100, 250, 500, 750, 1_000, 2_500, 5_000, 7_500, 10_000, 15_000, 25_000, 50_000, 75_000, 100_000, 250_000, 500_000, 1_000_000].freeze
+    LEADERBOARD_THRESHOLDS = [1, 3, 5, 10, 25, 50, 75, 100, 250, 500, 1_000].freeze
+    STREAK_THRESHOLDS = [2, 3, 5, 7, 10, 14, 21, 30, 45, 60, 90, 100, 180, 365].freeze
+
     class << self
       # Returns: { valid:, xp:, reno:, category:, reason? }
       def validate(user, quest_id)
@@ -42,22 +56,18 @@ module DiscourseCoinEngine
           cat   = stat_match[1]
           field = stat_match[2]
           thr   = stat_match[3].to_i
+          expected_field, allowed_thresholds = STAT_QUESTS.fetch(cat)
+          canonical_id = "#{cat}_#{expected_field}_#{thr}"
+          return invalid('unknown quest_id') unless quest_id == canonical_id && allowed_thresholds.include?(thr)
           actual = stats[field].to_i
           return invalid("stat #{field}=#{actual} < #{thr}") if actual < thr
           return ok(cat, tier_xp(thr), tier_reno(thr))
         end
 
-        # 2. Time-read tier: timeReader_{hours}_h  (time_read field is in seconds)
-        if (m = quest_id.match(/\AtimeReader_(\d+)_h\z/))
-          hours_thr = m[1].to_i
-          actual_h  = stats['time_read'].to_i / 3600.0
-          return invalid("time_read=#{actual_h.to_i}h < #{hours_thr}h") if actual_h < hours_thr
-          return ok('timeReader', hours_thr * 10, hours_thr * 25)
-        end
-
         # 3. Trust level: tl_N (1..4)
         if (m = quest_id.match(/\Atl_(\d+)\z/))
           thr = m[1].to_i
+          return invalid('unknown quest_id') unless quest_id == "tl_#{thr}" && TRUST_LEVELS.include?(thr)
           return invalid("trust_level=#{user.trust_level} < #{thr}") if user.trust_level < thr
           return ok('builder', 200 * thr, 1000 * thr)
         end
@@ -65,6 +75,7 @@ module DiscourseCoinEngine
         # 4. Score (holding) tier: reno_score_NNNN — informational only, no reward
         if (m = quest_id.match(/\Areno_score_(\d+)\z/))
           thr = m[1].to_i
+          return invalid('unknown quest_id') unless quest_id == "reno_score_#{thr}" && SCORE_THRESHOLDS.include?(thr)
           actual = ::DiscourseCoinEngine.coin_user_total(user.id)
           return invalid("score=#{actual} < #{thr}") if actual < thr
           return ok('reno', 0, 0)
@@ -73,6 +84,7 @@ module DiscourseCoinEngine
         # 5. Leaderboard rank: lb_top_N — verify by querying current rank
         if (m = quest_id.match(/\Alb_top_(\d+)\z/))
           thr = m[1].to_i
+          return invalid('unknown quest_id') unless quest_id == "lb_top_#{thr}" && LEADERBOARD_THRESHOLDS.include?(thr)
           rank = current_user_rank(user.id)
           return invalid("rank=#{rank.inspect} > #{thr}") if rank.nil? || rank > thr
           return ok('leaderboard', 0, 0)
@@ -190,8 +202,8 @@ module DiscourseCoinEngine
         end
 
         # ms_balanced / ms_balanced_500 — both likes_given AND likes_received >= N
-        if (m = quest_id.match(/\Ams_balanced(?:_(\d+))?\z/))
-          thr = m[1] ? m[1].to_i : 100
+        if quest_id == 'ms_balanced' || quest_id == 'ms_balanced_500'
+          thr = quest_id == 'ms_balanced_500' ? 500 : 100
           ustat = user.user_stat
           given = ustat&.likes_given.to_i
           recv  = ustat&.likes_received.to_i
@@ -213,6 +225,7 @@ module DiscourseCoinEngine
         # gamification_scores dates, not client counter)
         if (m = quest_id.match(/\Astreak_(\d+)\z/))
           thr = m[1].to_i
+          return invalid('unknown milestone') unless quest_id == "streak_#{thr}" && STREAK_THRESHOLDS.include?(thr)
           actual = begin
             ::DiscourseCoinEngine::StreakCalculator.new(user_id: user.id).current
           rescue StandardError
