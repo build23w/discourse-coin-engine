@@ -13,13 +13,16 @@ module DiscourseCoinEngine
       raise Discourse::NotFound unless user
 
       calc = StreakCalculator.new(user_id: user.id)
-      render json: {
+      payload = {
         username: user.username,
         current_days: calc.current,
         longest_days: calc.longest,
-        last_visit_at: calc.last_visit_at&.iso8601,
-        at_risk: calc.at_risk?
       }
+      if current_user && (current_user.id == user.id || current_user.staff?)
+        payload[:last_visit_at] = calc.last_visit_at&.iso8601
+        payload[:at_risk] = calc.at_risk?
+      end
+      render json: payload
     end
   end
 end

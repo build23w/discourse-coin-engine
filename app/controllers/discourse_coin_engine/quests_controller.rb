@@ -26,27 +26,30 @@ module DiscourseCoinEngine
 
       # Per-day cap to limit abuse even if validator misfires.
       max_per_day = (SiteSetting.coin_engine_quest_max_reno_per_day rescue 50_000).to_i
-      already_today = ::DiscourseCoinEngine::QuestClaim
-                        .where(user_id: current_user.id)
-                        .where('created_at > ?', 24.hours.ago)
-                        .sum(:reno_granted).to_i
-
       results = []
-      ids.each do |qid|
-        check = ::DiscourseCoinEngine::QuestValidator.validate(current_user, qid)
-        unless check[:valid]
-          results << { quest_id: qid, granted: false, reason: check[:reason] || 'invalid' }
-          next
-        end
+      already_today = 0
+      ActiveRecord::Base.transaction do
+        connection = ActiveRecord::Base.connection
+        lock_key = connection.quote("coin-engine-quest-user-#{current_user.id}")
+        connection.select_value("SELECT pg_advisory_xact_lock(hashtext(#{lock_key}))")
 
-        # Daily cap — if granting this would exceed it, skip the reward (still record claim).
-        reno = check[:reno].to_i
-        if already_today + reno > max_per_day
-          reno = [max_per_day - already_today, 0].max
-        end
+        already_today = ::DiscourseCoinEngine::QuestClaim
+                          .where(user_id: current_user.id)
+                          .where('created_at > ?', 24.hours.ago)
+                          .sum(:reno_granted).to_i
 
-        granted_now = false
-        ActiveRecord::Base.transaction do
+        ids.each do |qid|
+          check = ::DiscourseCoinEngine::QuestValidator.validate(current_user, qid)
+          unless check[:valid]
+            results << { quest_id: qid, granted: false, reason: check[:reason] || 'invalid' }
+            next
+          end
+
+          # Daily cap — if granting this would exceed it, grant only the remainder.
+          reno = check[:reno].to_i
+          reno = [max_per_day - already_today, 0].max if already_today + reno > max_per_day
+
+          granted_now = false
           # ON CONFLICT DO NOTHING idempotency. Returns 0 if duplicate.
           sql = <<~SQL
             INSERT INTO coin_engine_quest_claims
@@ -65,38 +68,38 @@ module DiscourseCoinEngine
             granted_now = true
             already_today += reno
             ::DiscourseCoinEngine.credit_score(current_user.id, Date.today, reno) if reno > 0
-            ::DiscourseCoinEngine.refresh_user_score(current_user.id)
+          end
+
+          if granted_now
+            results << {
+              quest_id: qid,
+              granted: true,
+              granted_xp: check[:xp].to_i,
+              granted_reno: reno,
+              category: check[:category],
+            }
+          else
+            results << { quest_id: qid, granted: false, reason: 'already_claimed' }
           end
         end
+      end
 
-        if granted_now
-          results << {
-            quest_id:    qid,
-            granted:     true,
-            granted_xp:  check[:xp].to_i,
-            granted_reno: reno,
-            category:    check[:category],
-          }
-          # Push real-time toast to the user (their open browser tabs)
-          if reno > 0
-            begin
-              MessageBus.publish("/coin-engine/credits/#{current_user.id}", {
-                amount: reno,
-                reason: 'quest_reward',
-                label:  'Quest reward',
-                coin:   SiteSetting.coin_engine_coin_name,
-                new_total: ::DiscourseCoinEngine.coin_user_total(current_user.id),
-                sender: nil,
-                note:   "Quest: #{qid}",
-                ref:    { type: 'quest', id: qid },
-                ts:     Time.now.to_i,
-              }, user_ids: [current_user.id])
-            rescue StandardError => e
-              Rails.logger.warn("[coin_engine] quest reward MessageBus failed: #{e.class}: #{e.message}")
-            end
-          end
-        else
-          results << { quest_id: qid, granted: false, reason: 'already_claimed' }
+      ::DiscourseCoinEngine.refresh_user_score(current_user.id) if results.any? { |result| result[:granted] }
+      results.select { |result| result[:granted] && result[:granted_reno].to_i > 0 }.each do |result|
+        begin
+          MessageBus.publish("/coin-engine/credits/#{current_user.id}", {
+            amount: result[:granted_reno],
+            reason: 'quest_reward',
+            label: 'Quest reward',
+            coin: SiteSetting.coin_engine_coin_name,
+            new_total: ::DiscourseCoinEngine.coin_user_total(current_user.id),
+            sender: nil,
+            note: "Quest: #{result[:quest_id]}",
+            ref: { type: 'quest', id: result[:quest_id] },
+            ts: Time.now.to_i,
+          }, user_ids: [current_user.id])
+        rescue StandardError => e
+          Rails.logger.warn("[coin_engine] quest reward MessageBus failed: #{e.class}: #{e.message}")
         end
       end
 

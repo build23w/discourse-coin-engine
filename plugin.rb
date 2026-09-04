@@ -95,13 +95,18 @@ module ::DiscourseCoinEngine
     # per-period boards stay in sync.
     begin
       if defined?(::DiscourseGamification::GamificationLeaderboard)
-        # Pluck IDs once — cheap query, plus we don't load full records.
-        lb_ids = ::DiscourseGamification::GamificationLeaderboard.pluck(:id)
-        lb_ids.each do |lb_id|
-          sql2 = "INSERT INTO gamification_leaderboard_scores (leaderboard_id, user_id, date, score) " \
-                 "VALUES (#{lb_id.to_i}, #{uid}, #{quoted_date}, #{amt}) " \
-                 "ON CONFLICT (leaderboard_id, user_id, date) DO UPDATE SET score = gamification_leaderboard_scores.score + EXCLUDED.score"
-          ActiveRecord::Base.connection.execute(sql2)
+        # Keep optional mirror failures inside a savepoint. Callers intentionally
+        # wrap the primary ledger credit with their claim row; rescuing a mirror
+        # SQL error without a savepoint would leave that outer transaction aborted.
+        ActiveRecord::Base.transaction(requires_new: true) do
+          # Pluck IDs once — cheap query, plus we don't load full records.
+          lb_ids = ::DiscourseGamification::GamificationLeaderboard.pluck(:id)
+          lb_ids.each do |lb_id|
+            sql2 = "INSERT INTO gamification_leaderboard_scores (leaderboard_id, user_id, date, score) " \
+                   "VALUES (#{lb_id.to_i}, #{uid}, #{quoted_date}, #{amt}) " \
+                   "ON CONFLICT (leaderboard_id, user_id, date) DO UPDATE SET score = gamification_leaderboard_scores.score + EXCLUDED.score"
+            ActiveRecord::Base.connection.execute(sql2)
+          end
         end
       end
     rescue StandardError => e
@@ -1023,15 +1028,16 @@ after_initialize do
           else 500
           end
         if status == 500
-          Rails.logger.error("[coin_engine] #{self.class.name}##{action} -> #{e.class}: #{e.message}")
+          reference = SecureRandom.hex(12)
+          Rails.logger.error("[coin_engine] ref=#{reference} #{self.class.name}##{action} -> #{e.class}: #{e.message}")
           (e.backtrace || []).first(10).each { |frame| Rails.logger.error("  #{frame}") }
         end
         payload = {
-          errors: [status == 500 ? "#{e.class}: #{e.message}" : e.message],
+          errors: [status == 500 ? "Unexpected server error (reference #{reference})" : e.message],
           error_type: 'coin_engine_exception',
           action: action,
         }
-        payload[:where] = (e.backtrace || []).first(3) if status == 500
+        payload[:reference] = reference if status == 500
         render json: payload, status: status
       end
     end
