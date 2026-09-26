@@ -6,7 +6,8 @@
 #
 # Why this is needed:
 #   - discourse-gamification's ScoreCalculator writes only to gamification_scores
-#   - Our credit_score helper writes to both (since v0.9.3)
+#   - The credit_score helper writes to gamification_scores, which fires this
+#     trigger; it must not also write gamification_leaderboard_scores itself
 #   - Other plugins, raw SQL fixes, and future writers may not know about the
 #     dual-write convention
 #   - Without a database-level guarantee, drift creeps in and users see
