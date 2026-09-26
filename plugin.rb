@@ -52,7 +52,7 @@ module ::DiscourseCoinEngine
       nil
     end
     # Bust the discourse-gamification leaderboard materialized view.
-    # Throttled to once per 60s — REFRESH MATERIALIZED VIEW is a full table scan
+    # Throttled to once per 5s — REFRESH MATERIALIZED VIEW is a full table scan
     # and we don't want every tip/quest claim to trigger one.
     begin
       ::DiscourseCoinEngine.refresh_leaderboard_views!(throttle: 5)
@@ -132,7 +132,12 @@ module ::DiscourseCoinEngine
     return if last && Time.now - last < throttle.to_i
     Rails.cache.write('coin_engine_lb_refresh_at', Time.now, expires_in: 1.day)
 
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     refreshed = false
+    helper_refreshed = false
+    discovered_count = 0
+    mv_count = 0
+    fallback_count = 0
     begin
       # NOTE: discourse-gamification dropped the `.refresh` class method in newer
       # versions (Discourse 2026.6+). Guard with respond_to? so we don't spam
@@ -141,6 +146,7 @@ module ::DiscourseCoinEngine
          ::DiscourseGamification::LeaderboardCachedView.respond_to?(:refresh)
         ::DiscourseGamification::LeaderboardCachedView.refresh
         refreshed = true
+        helper_refreshed = true
       end
     rescue StandardError => e
       Rails.logger.warn("[coin_engine] LeaderboardCachedView.refresh: #{e.class}: #{e.message}")
@@ -154,16 +160,19 @@ module ::DiscourseCoinEngine
       mvs = ActiveRecord::Base.connection.execute(
         "SELECT matviewname FROM pg_matviews WHERE matviewname LIKE 'gamification_leaderboard_cache%'"
       ).map { |r| r['matviewname'] }
-      Rails.logger.info("[coin_engine] discovered #{mvs.size} gamification leaderboard MVs to refresh")
+      discovered_count = mvs.size
       mvs.each do |mv|
         begin
           ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY #{mv}")
           refreshed = true
+          mv_count += 1
         rescue ActiveRecord::StatementInvalid
           # Retry without CONCURRENTLY (no unique index OR not populated yet)
           begin
             ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW #{mv}")
             refreshed = true
+            mv_count += 1
+            fallback_count += 1
           rescue StandardError
             nil
           end
@@ -174,6 +183,8 @@ module ::DiscourseCoinEngine
     rescue StandardError => e
       Rails.logger.warn("[coin_engine] MV discovery failed: #{e.class}: #{e.message}")
     end
+    elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    Rails.logger.info("[coin_engine] leaderboard refresh source=on_demand helper_refreshed=#{helper_refreshed} refreshed_mvs=#{mv_count} discovered_mvs=#{discovered_count} fallback_mvs=#{fallback_count} elapsed_ms=#{elapsed_ms}")
     refreshed
   end
 

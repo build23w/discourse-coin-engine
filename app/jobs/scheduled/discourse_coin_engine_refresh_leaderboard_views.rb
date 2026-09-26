@@ -17,6 +17,7 @@ module Jobs
     every 1.minute
 
     def execute(args)
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       return unless SiteSetting.coin_engine_enabled rescue true
 
       mvs = ::ActiveRecord::Base.connection.execute(
@@ -27,6 +28,7 @@ module Jobs
 
       ok_count = 0
       fail_count = 0
+      fallback_count = 0
       mvs.each do |mv|
         begin
           ::ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY #{mv}")
@@ -37,6 +39,7 @@ module Jobs
           begin
             ::ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW #{mv}")
             ok_count += 1
+            fallback_count += 1
           rescue StandardError => e
             fail_count += 1
             Rails.logger.warn("[coin_engine.scheduled.refresh_lb] MV #{mv} non-concurrent fallback failed: #{e.message[0,160]}")
@@ -51,9 +54,11 @@ module Jobs
       # don't no-op due to "ran too recently" — we ARE the periodic refresh now.
       Rails.cache.delete('coin_engine_lb_refresh_at') rescue nil
 
-      Rails.logger.info("[coin_engine.scheduled.refresh_lb] refreshed #{ok_count}/#{mvs.size} MVs (#{fail_count} failed)") if ok_count > 0 || fail_count > 0
+      elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      Rails.logger.info("[coin_engine.scheduled.refresh_lb] refreshed #{ok_count}/#{mvs.size} MVs (#{fail_count} failed, #{fallback_count} fallback), elapsed_ms=#{elapsed_ms}") if ok_count > 0 || fail_count > 0
     rescue StandardError => e
-      Rails.logger.error("[coin_engine.scheduled.refresh_lb] job failed: #{e.class}: #{e.message}")
+      elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      Rails.logger.error("[coin_engine.scheduled.refresh_lb] job failed after #{elapsed_ms}ms: #{e.class}: #{e.message}")
       # don't re-raise; scheduled jobs should keep running on next tick
     end
   end

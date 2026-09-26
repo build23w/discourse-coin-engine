@@ -89,3 +89,4 @@ and the theme layer (hrr-ux-pack id=31, hrr-feed-images id=33).
 - Per-profile: social analytics card + $RENO Wrapped year-in-review (theme 31).
 - Site-wide: Community Pulse dashboard tab, leaderboard (`/leaderboard`), squad leaderboard.
 - Admin: Discourse reports + coin-engine admin endpoints (verified pros stats, squads, airdrops).
+- Leaderboard refresh logs: `[coin_engine.scheduled.refresh_lb]` records successful, failed, and fallback materialized-view counts plus `elapsed_ms` once per scheduled run. `[coin_engine] leaderboard refresh source=on_demand` records the same timing and the discovered view count when a score update triggers an unthrottled refresh. Compare run frequency and elapsed-time distributions against container CPU before changing the one-minute schedule or credit-path throttle. `elapsed_ms` is wall time, not Postgres CPU time or a direct cost measure.
