@@ -89,29 +89,10 @@ module ::DiscourseCoinEngine
     result = ActiveRecord::Base.connection.execute(sql1)
     n = result.respond_to?(:cmd_tuples) ? result.cmd_tuples : 1
 
-    # v0.9.3 — Write 2: gamification_leaderboard_scores (discourse-gamification's
-    # ledger that powers /leaderboard/N). Without this, our credits never reach
-    # the leaderboard UI. Mirror to ALL active leaderboards so per-category /
-    # per-period boards stay in sync.
-    begin
-      if defined?(::DiscourseGamification::GamificationLeaderboard)
-        # Keep optional mirror failures inside a savepoint. Callers intentionally
-        # wrap the primary ledger credit with their claim row; rescuing a mirror
-        # SQL error without a savepoint would leave that outer transaction aborted.
-        ActiveRecord::Base.transaction(requires_new: true) do
-          # Pluck IDs once — cheap query, plus we don't load full records.
-          lb_ids = ::DiscourseGamification::GamificationLeaderboard.pluck(:id)
-          lb_ids.each do |lb_id|
-            sql2 = "INSERT INTO gamification_leaderboard_scores (leaderboard_id, user_id, date, score) " \
-                   "VALUES (#{lb_id.to_i}, #{uid}, #{quoted_date}, #{amt}) " \
-                   "ON CONFLICT (leaderboard_id, user_id, date) DO UPDATE SET score = gamification_leaderboard_scores.score + EXCLUDED.score"
-            ActiveRecord::Base.connection.execute(sql2)
-          end
-        end
-      end
-    rescue StandardError => e
-      Rails.logger.warn("[coin_engine] mirror to gamification_leaderboard_scores failed: #{e.class}: #{e.message}")
-    end
+    # The coin_engine_mirror_score_trigger installed by migration 20260503000007
+    # mirrors this INSERT/UPDATE to every leaderboard in the same transaction.
+    # Writing to gamification_leaderboard_scores again here doubled each award
+    # and added one SQL round trip per leaderboard.
 
     Rails.logger.info("[coin_engine] credit_score user=#{uid} amount=#{amt} rows=#{n}")
     n
