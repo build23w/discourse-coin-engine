@@ -19,6 +19,8 @@ jobs:
           set -e
           for f in $(git ls-files '*.rb'); do ruby -c "$f" >/dev/null; done
           echo "all ruby files parse"
+      - name: Leaderboard refresh job fallback
+        run: ruby test/leaderboard_refresh_job_test.rb
       - name: YAML files must load
         run: |
           set -e

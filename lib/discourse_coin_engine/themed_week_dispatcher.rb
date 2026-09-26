@@ -113,6 +113,14 @@ module DiscourseCoinEngine
         end
       end
 
+      # Keep this reward as fresh as other coin-engine credits now that the
+      # redundant minute-by-minute leaderboard refresh is gone.
+      begin
+        ::DiscourseCoinEngine.refresh_user_score(user.id) if ::DiscourseCoinEngine.respond_to?(:refresh_user_score)
+      rescue StandardError => e
+        Rails.logger.warn("[coin_engine.themed_week] score refresh failed: #{e.class}: #{e.message[0,160]}")
+      end
+
       Rails.logger.info(
         "[coin_engine.themed_week] credited user=#{user.id} post=#{post.id} " \
         "kind=#{kind} amount=#{amount} theme=#{themed_name.inspect}"

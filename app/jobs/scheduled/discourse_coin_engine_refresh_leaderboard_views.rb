@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-# v0.12.4 - Scheduled MV refresh job. Runs every minute. The Postgres trigger
-# (installed by 20260503000007) keeps gamification_leaderboard_scores in
-# perfect sync with gamification_scores in real time, but the materialized
-# views that /leaderboard/N reads from need an explicit REFRESH to pick up
-# the new ledger rows.
+# Fallback MV refresh for installations without Discourse's bundled gamification
+# hourly job. Coin-engine writes also refresh on demand through
+# refresh_user_score. The Postgres trigger (installed by 20260503000007) keeps
+# gamification_leaderboard_scores in sync with gamification_scores, but the
+# materialized views that /leaderboard/N reads need an explicit REFRESH.
 #
 # CONCURRENTLY mode allows the leaderboard page to keep serving stale data
 # during the refresh, then atomically swaps to the new snapshot. Postgres
@@ -14,11 +14,17 @@
 
 module Jobs
   class DiscourseCoinEngineRefreshLeaderboardViews < ::Jobs::Scheduled
-    every 1.minute
+    every 1.hour
 
     def execute(args)
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       return unless SiteSetting.coin_engine_enabled rescue true
+
+      # Bundled discourse-gamification's UpdateScoresForToday already refreshes
+      # all leaderboard views hourly. Avoid rescanning every view a second time.
+      return if defined?(::Jobs::UpdateScoresForToday) &&
+                SiteSetting.respond_to?(:discourse_gamification_enabled) &&
+                SiteSetting.discourse_gamification_enabled
 
       mvs = ::ActiveRecord::Base.connection.execute(
         "SELECT matviewname FROM pg_matviews WHERE matviewname LIKE 'gamification_leaderboard_cache%'"
