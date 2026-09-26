@@ -148,10 +148,16 @@ module DiscourseCoinEngine
       topic_id = params[:topic_id].to_i
       return render json: { replies: [], enabled: enabled } if topic_id <= 0
       limit = params[:limit].present? ? [[params[:limit].to_i, 1].max, 10].min : 3
+      topic = ::Topic.find_by(id: topic_id)
+      raise ::Discourse::NotFound unless topic && guardian.can_see?(topic)
+      anonymous_guardian = ::Guardian.new(nil)
+      public_topic = anonymous_guardian.can_see?(topic)
 
-      # SCALE: rows + excerpts (PrettyText is the expensive part) are viewer-
-      # independent — cache the base payload 60s; merge per-user my_vote after.
-      base = Discourse.cache.fetch("ce_topreplies_#{topic_id}_#{limit}", expires_in: 60.seconds) do
+      # Public excerpts may be shared only after an anonymous Guardian check.
+      # Private topics are computed for the requesting viewer without a shared
+      # base cache, because post visibility can differ within the same topic.
+      visible_to = public_topic ? anonymous_guardian : guardian
+      build_base = lambda do
         rows = ::ActiveRecord::Base.connection.exec_query(<<~SQL).to_a
           SELECT p.id AS post_id, p.post_number, p.user_id,
                  COALESCE(SUM(v.direction),0)::int AS score, COUNT(v.id)::int AS n
@@ -159,6 +165,7 @@ module DiscourseCoinEngine
           JOIN coin_engine_post_votes v ON v.post_id = p.id
           WHERE p.topic_id = #{topic_id} AND p.post_number > 1
                 AND p.deleted_at IS NULL AND COALESCE(p.hidden, false) = false
+                AND p.post_type = #{::Post.types[:regular]}
           GROUP BY p.id, p.post_number, p.user_id
           HAVING COALESCE(SUM(v.direction),0) > 0
           ORDER BY score DESC, n DESC, p.post_number ASC
@@ -170,11 +177,10 @@ module DiscourseCoinEngine
         else
           posts = ::Post.where(id: post_ids).index_by(&:id)
           users = ::User.where(id: rows.map { |r| r['user_id'].to_i }.uniq).index_by(&:id)
-          topic = ::Topic.find_by(id: topic_id)
           rows.filter_map do |r|
             pid  = r['post_id'].to_i
             post = posts[pid]
-            next nil unless post
+            next nil unless post && visible_to.can_see_post?(post)
             u = users[r['user_id'].to_i]
             excerpt = begin
               ::PrettyText.excerpt(post.cooked.to_s, 200, keep_emoji_images: true)
@@ -197,6 +203,12 @@ module DiscourseCoinEngine
           end
         end
       end
+      base = if public_topic
+        Discourse.cache.fetch("ce_topreplies_public_v2_#{topic_id}_#{limit}", expires_in: 60.seconds) { build_base.call }
+      else
+        build_base.call
+      end
+      response.headers['X-LF-Public-Top-Replies'] = '1' if current_user.nil? && public_topic
       return render json: { replies: [], enabled: enabled, topic_id: topic_id } if base.empty?
 
       replies = base
