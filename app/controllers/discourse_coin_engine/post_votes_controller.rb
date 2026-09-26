@@ -81,6 +81,10 @@ module DiscourseCoinEngine
     #   ?topic_ids=1,2,3  -> each topic's OP post score (feed)
     def batch
       enabled = !!setting(:coin_engine_feed_voting_enabled, true)
+      # The Worker may share this short-lived response only when Rails confirms
+      # there is no viewer-specific my_vote value in it. Session requests never
+      # receive this marker, even when all of their current votes happen to be 0.
+      response.set_header('X-LF-Public-Vote-Batch', '1') if current_user.nil?
       if params[:post_ids].present?
         ids = parse_ids(params[:post_ids])
         return render json: { votes: {}, key: 'post', enabled: enabled } if ids.empty?
